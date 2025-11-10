@@ -1,0 +1,81 @@
+# Resolve react_native_pods.rb with node to allow for hoisting
+require Pod::Executable.execute_command('node', ['-p',
+  'require.resolve(
+    "react-native/scripts/react_native_pods.rb",
+    {paths: [process.argv[1]]},
+  )', __dir__]).strip
+
+platform :ios, min_ios_version_supported
+prepare_react_native_project!
+
+linkage = ENV['USE_FRAMEWORKS']
+if linkage != nil
+  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+  use_frameworks! :linkage => linkage.to_sym
+end
+
+target 'TimelineApp' do
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    # An absolute path to your application root.
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+
+  post_install do |installer|
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false,
+      # :ccache_enabled => true
+    )
+    
+    # Comprehensive fix for RCT-Folly compatibility with iOS SDK 26.1 and Xcode 26.1
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        # Set minimum iOS version
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.4'
+        
+        # Fix RCT-Folly specific issues
+        if target.name == 'RCT-Folly'
+          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+          # iOS SDK 26.1 has clock_gettime and clockid_t, so we should use it
+          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'FOLLY_HAVE_CLOCK_GETTIME=1'
+          config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'FOLLY_HAVE_PTHREAD_ATFORK=0'
+          
+          # C++ standard library settings
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+          config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+          
+          # Disable problematic warnings that might be treated as errors
+          config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'NO'
+          config.build_settings['WARNING_CFLAGS'] ||= ['$(inherited)']
+          config.build_settings['WARNING_CFLAGS'] << '-Wno-deprecated-declarations'
+          config.build_settings['WARNING_CFLAGS'] << '-Wno-deprecated'
+          config.build_settings['WARNING_CFLAGS'] << '-Wno-error=deprecated-declarations'
+          
+          # Additional compiler flags for compatibility
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] ||= ['$(inherited)']
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] << '-Wno-deprecated-declarations'
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] << '-std=c++17'
+        end
+        
+        # Apply similar fixes to all C++ targets that might have issues
+        if target.name.include?('React') || target.name.include?('hermes') || target.name.include?('Folly')
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+          config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+        end
+      end
+      
+      # Fix Hermes script phase issues
+      if target.name == 'hermes-engine'
+        target.build_phases.each do |phase|
+          if phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase) && phase.name && phase.name.include?('Hermes')
+            phase.always_out_of_date = true
+          end
+        end
+      end
+    end
+  end
+end
