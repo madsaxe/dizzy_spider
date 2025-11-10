@@ -25,18 +25,36 @@ const CreateEraScreen = () => {
   const [endTime, setEndTime] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isFictional, setIsFictional] = useState(false);
+  const [existingEras, setExistingEras] = useState([]);
+  const [positionRelativeTo, setPositionRelativeTo] = useState(null);
 
   React.useEffect(() => {
-    const loadTimeline = async () => {
+    const loadData = async () => {
       const timeline = await timelineService.getTimelineById(timelineId);
       if (timeline) {
         setIsFictional(timeline.isFictional);
+        
+        // Load existing eras for relative positioning (fictional timelines only)
+        if (timeline.isFictional) {
+          const eras = await timelineService.getErasByTimelineId(timelineId);
+          setExistingEras(eras);
+          // If there are existing eras, require selecting which one this follows
+          if (eras.length > 0 && !positionRelativeTo) {
+            // Don't set a default - user must choose
+          }
+        }
       }
     };
-    loadTimeline();
+    loadData();
   }, [timelineId]);
 
   const handleCreate = async () => {
+    // For fictional timelines with existing eras, require either relative positioning OR custom times
+    if (isFictional && existingEras.length > 0 && !positionRelativeTo && !startTime) {
+      Alert.alert('Validation Error', 'Please either select which era this new era follows, or specify a custom start time.');
+      return;
+    }
+
     const eraData = {
       timelineId,
       title: title.trim(),
@@ -44,6 +62,8 @@ const CreateEraScreen = () => {
       startTime: startTime || null,
       endTime: endTime || null,
       order: 0,
+      positionRelativeTo: isFictional && existingEras.length > 0 ? positionRelativeTo : null,
+      positionType: isFictional && existingEras.length > 0 && positionRelativeTo ? 'after' : null,
     };
 
     const validation = validateEra(eraData);
@@ -92,6 +112,34 @@ const CreateEraScreen = () => {
           multiline
           numberOfLines={4}
         />
+
+        {isFictional && existingEras.length > 0 && (
+          <View>
+            <Text style={styles.label}>Position After Era (Optional)</Text>
+            <Text style={styles.hint}>
+              Select an era to position this era after it, or leave blank and specify custom times below.
+            </Text>
+            {existingEras.map((era) => (
+              <TouchableOpacity
+                key={era.id}
+                style={[
+                  styles.eraOption,
+                  positionRelativeTo === era.id && styles.eraOptionSelected,
+                ]}
+                onPress={() => setPositionRelativeTo(era.id === positionRelativeTo ? null : era.id)}
+              >
+                <Text
+                  style={[
+                    styles.eraOptionText,
+                    positionRelativeTo === era.id && styles.eraOptionTextSelected,
+                  ]}
+                >
+                  {era.title}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <TimeInput
           label="Time Range"
@@ -158,6 +206,32 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '600',
+  },
+  eraOption: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    backgroundColor: '#fff',
+  },
+  eraOptionSelected: {
+    borderColor: '#007AFF',
+    backgroundColor: '#e3f2fd',
+  },
+  eraOptionText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  eraOptionTextSelected: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  hint: {
+    fontSize: 14,
+    color: '#999',
+    fontStyle: 'italic',
+    marginTop: 8,
   },
 });
 

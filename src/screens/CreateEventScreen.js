@@ -180,6 +180,7 @@ const CreateEventScreen = () => {
             value={time}
             onChange={setTime}
             isFictional={isFictional}
+            isRelational={false}
             placeholder="Enter time"
           />
         )}

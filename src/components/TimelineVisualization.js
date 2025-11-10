@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
-import TimelineItem from './TimelineItem';
+import Timeline from 'react-native-timeline-flatlist';
 import timelineService from '../services/timelineService';
+import { transformToTimelineItems, prepareTimelineData } from '../utils/timelineUtils';
 
 const TimelineVisualization = ({
   timelineId,
@@ -30,12 +30,22 @@ const TimelineVisualization = ({
   const [events, setEvents] = useState({});
   const [scenes, setScenes] = useState({});
   const [loading, setLoading] = useState(true);
-  const [expandedEras, setExpandedEras] = useState(new Set());
-  const [expandedEvents, setExpandedEvents] = useState(new Set());
+  const [timelineData, setTimelineData] = useState([]);
 
   useEffect(() => {
     loadTimelineData();
   }, [timelineId]);
+
+  useEffect(() => {
+    // Transform data whenever eras, events, or scenes change
+    if (eras.length > 0 || Object.keys(events).length > 0) {
+      const items = transformToTimelineItems(eras, events, scenes, isFictional);
+      const formattedData = prepareTimelineData(items);
+      setTimelineData(formattedData);
+    } else {
+      setTimelineData([]);
+    }
+  }, [eras, events, scenes, isFictional]);
 
   const loadTimelineData = async () => {
     try {
@@ -45,19 +55,19 @@ const TimelineVisualization = ({
 
       // Load events for each era
       const eventsMap = {};
+      const scenesMap = {};
       for (const era of timelineEras) {
         const eraEvents = await timelineService.getEventsByEraId(era.id);
         eventsMap[era.id] = eraEvents;
 
         // Load scenes for each event
-        const scenesMap = {};
         for (const event of eraEvents) {
           const eventScenes = await timelineService.getScenesByEventId(event.id);
           scenesMap[event.id] = eventScenes;
         }
-        setScenes(prev => ({ ...prev, ...scenesMap }));
       }
       setEvents(eventsMap);
+      setScenes(scenesMap);
     } catch (error) {
       console.error('Error loading timeline data:', error);
     } finally {
@@ -65,43 +75,26 @@ const TimelineVisualization = ({
     }
   };
 
-  const toggleEra = (eraId) => {
-    setExpandedEras((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(eraId)) {
-        newSet.delete(eraId);
-      } else {
-        newSet.add(eraId);
-      }
-      return newSet;
-    });
-  };
+  const handleTimelineEventPress = (event, index) => {
+    const originalData = event._originalData;
+    if (!originalData) return;
 
-  const toggleEvent = (eventId) => {
-    setExpandedEvents((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(eventId)) {
-        newSet.delete(eventId);
-      } else {
-        newSet.add(eventId);
-      }
-      return newSet;
-    });
-  };
-
-  const handleEraPress = (era) => {
-    if (onEraPress) {
-      onEraPress(era);
-    } else {
-      toggleEra(era.id);
-    }
-  };
-
-  const handleEventPress = (event) => {
-    if (onEventPress) {
-      onEventPress(event);
-    } else {
-      toggleEvent(event.id);
+    switch (originalData.type) {
+      case 'era':
+        if (onEraPress) {
+          onEraPress(originalData.data);
+        }
+        break;
+      case 'event':
+        if (onEventPress) {
+          onEventPress(originalData.data);
+        }
+        break;
+      case 'scene':
+        if (onScenePress) {
+          onScenePress(originalData.data);
+        }
+        break;
     }
   };
 
@@ -134,6 +127,94 @@ const TimelineVisualization = ({
     );
   }
 
+  const renderDetail = (rowData, sectionID, rowID) => {
+    const originalData = rowData._originalData;
+    if (!originalData) return null;
+
+    const item = originalData.data;
+    const itemType = originalData.type;
+
+    return (
+      <View style={styles.timelineDetail}>
+        <View style={styles.timelineDetailHeader}>
+          <Text style={styles.timelineDetailTitle}>{rowData.title}</Text>
+          <View style={styles.timelineDetailActions}>
+            {itemType === 'era' && onEraEdit && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => onEraEdit(item)}
+              >
+                <Text style={styles.actionText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+            {itemType === 'event' && onEventEdit && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => onEventEdit(item)}
+              >
+                <Text style={styles.actionText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+            {itemType === 'scene' && onSceneEdit && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => onSceneEdit(item)}
+              >
+                <Text style={styles.actionText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+            {itemType === 'era' && onEraDelete && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.deleteButton]}
+                onPress={() => handleEraDelete(item)}
+              >
+                <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
+              </TouchableOpacity>
+            )}
+            {itemType === 'event' && onEventDelete && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.deleteButton]}
+                onPress={() => handleEventDelete(item)}
+              >
+                <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
+              </TouchableOpacity>
+            )}
+            {itemType === 'scene' && onSceneDelete && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.deleteButton]}
+                onPress={() => handleSceneDelete(item)}
+              >
+                <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+        {rowData.description && (
+          <Text style={styles.timelineDetailDescription}>{rowData.description}</Text>
+        )}
+        <Text style={styles.timelineDetailTime}>{rowData.time}</Text>
+        
+        {/* Add action buttons for creating child items */}
+        {itemType === 'era' && onAddEvent && (
+          <TouchableOpacity
+            style={styles.addChildButton}
+            onPress={() => onAddEvent(item.id)}
+          >
+            <Text style={styles.addChildButtonText}>+ Add Event to this Era</Text>
+          </TouchableOpacity>
+        )}
+        {itemType === 'event' && onAddScene && (
+          <TouchableOpacity
+            style={styles.addChildButton}
+            onPress={() => onAddScene(item.id)}
+          >
+            <Text style={styles.addChildButtonText}>+ Add Scene to this Event</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   if (eras.length === 0) {
     return (
       <View style={styles.emptyContainer}>
@@ -148,110 +229,32 @@ const TimelineVisualization = ({
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={loading} onRefresh={loadTimelineData} />
-      }
-    >
-      {eras.map((era) => {
-        const isEraExpanded = expandedEras.has(era.id);
-        const eraEvents = events[era.id] || [];
-
-        return (
-          <View key={era.id} style={styles.eraContainer}>
-            <TimelineItem
-              item={era}
-              type="era"
-              isFictional={isFictional}
-              onPress={() => handleEraPress(era)}
-              onEdit={() => onEraEdit && onEraEdit(era)}
-              onDelete={() => handleEraDelete(era)}
-              level={0}
-            />
-            {isEraExpanded && (
-              <View style={styles.childrenContainer}>
-                {eraEvents.length === 0 ? (
-                  <View style={styles.emptyChildren}>
-                    <Text style={styles.emptyChildrenText}>No events yet</Text>
-                    {onAddEvent && (
-                      <TouchableOpacity
-                        style={styles.addChildButton}
-                        onPress={() => onAddEvent(era.id)}
-                      >
-                        <Text style={styles.addChildButtonText}>Add Event</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ) : (
-                  eraEvents.map((event) => {
-                    const isEventExpanded = expandedEvents.has(event.id);
-                    const eventScenes = scenes[event.id] || [];
-
-                    return (
-                      <View key={event.id} style={styles.eventContainer}>
-                        <TimelineItem
-                          item={event}
-                          type="event"
-                          isFictional={isFictional}
-                          onPress={() => handleEventPress(event)}
-                          onEdit={() => onEventEdit && onEventEdit(event)}
-                          onDelete={() => handleEventDelete(event)}
-                          level={1}
-                        />
-                        {isEventExpanded && (
-                          <View style={styles.childrenContainer}>
-                            {eventScenes.length === 0 ? (
-                              <View style={styles.emptyChildren}>
-                                <Text style={styles.emptyChildrenText}>No scenes yet</Text>
-                                {onAddScene && (
-                                  <TouchableOpacity
-                                    style={styles.addChildButton}
-                                    onPress={() => onAddScene(event.id)}
-                                  >
-                                    <Text style={styles.addChildButtonText}>Add Scene</Text>
-                                  </TouchableOpacity>
-                                )}
-                              </View>
-                            ) : (
-                              eventScenes.map((scene) => (
-                                <TimelineItem
-                                  key={scene.id}
-                                  item={scene}
-                                  type="scene"
-                                  isFictional={isFictional}
-                                  onPress={() => onScenePress && onScenePress(scene)}
-                                  onEdit={() => onSceneEdit && onSceneEdit(scene)}
-                                  onDelete={() => handleSceneDelete(scene)}
-                                  level={2}
-                                />
-                              ))
-                            )}
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })
-                )}
-                {onAddEvent && (
-                  <TouchableOpacity
-                    style={styles.addChildButton}
-                    onPress={() => onAddEvent(era.id)}
-                  >
-                    <Text style={styles.addChildButtonText}>+ Add Event</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </View>
-        );
-      })}
-      {onAddEra && (
-        <TouchableOpacity style={styles.addButton} onPress={onAddEra}>
-          <Text style={styles.addButtonText}>+ Add Era</Text>
-        </TouchableOpacity>
-      )}
-    </ScrollView>
+    <View style={styles.container}>
+      <Timeline
+        data={timelineData}
+        circleSize={20}
+        timeContainerStyle={{ minWidth: 100, maxWidth: 100 }}
+        timeStyle={styles.timeStyle}
+        descriptionStyle={styles.descriptionStyle}
+        titleStyle={styles.titleStyle}
+        detailContainerStyle={styles.detailContainer}
+        onEventPress={handleTimelineEventPress}
+        renderDetail={renderDetail}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={loadTimelineData} />
+        }
+        ListFooterComponent={
+          onAddEra ? (
+            <TouchableOpacity style={styles.addButton} onPress={onAddEra}>
+              <Text style={styles.addButtonText}>+ Add Era</Text>
+            </TouchableOpacity>
+          ) : null
+        }
+        options={{
+          style: { paddingTop: 5, paddingLeft: 5, paddingRight: 5 },
+        }}
+      />
+    </View>
   );
 };
 
@@ -259,7 +262,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-    padding: 16,
   },
   loadingContainer: {
     flex: 1,
@@ -283,31 +285,86 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-  eraContainer: {
-    marginBottom: 12,
+  timeStyle: {
+    textAlign: 'center',
+    backgroundColor: '#007AFF',
+    color: 'white',
+    padding: 5,
+    borderRadius: 13,
+    fontSize: 12,
   },
-  eventContainer: {
-    marginBottom: 8,
-  },
-  childrenContainer: {
-    marginLeft: 20,
-    marginTop: 8,
-  },
-  emptyChildren: {
-    padding: 12,
-    alignItems: 'center',
-  },
-  emptyChildrenText: {
+  descriptionStyle: {
+    color: '#666',
     fontSize: 14,
-    color: '#999',
+  },
+  titleStyle: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  detailContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  timelineDetail: {
+    padding: 8,
+  },
+  timelineDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
+  },
+  timelineDetailTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+    flex: 1,
+  },
+  timelineDetailActions: {
+    flexDirection: 'row',
+  },
+  actionButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 8,
+    borderRadius: 4,
+    backgroundColor: '#f0f0f0',
+  },
+  deleteButton: {
+    backgroundColor: '#ffebee',
+  },
+  actionText: {
+    fontSize: 12,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  deleteText: {
+    color: '#FF3B30',
+  },
+  timelineDetailDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  timelineDetailTime: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
   },
   addButton: {
     backgroundColor: '#007AFF',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 16,
+    margin: 16,
   },
   addButtonText: {
     color: '#fff',
@@ -316,10 +373,13 @@ const styles = StyleSheet.create({
   },
   addChildButton: {
     backgroundColor: '#f0f0f0',
-    padding: 10,
-    borderRadius: 6,
+    padding: 12,
+    borderRadius: 8,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    borderStyle: 'dashed',
   },
   addChildButtonText: {
     color: '#007AFF',

@@ -7,6 +7,8 @@ class Era {
     this.startTime = data.startTime || null; // Can be date string or fictional time
     this.endTime = data.endTime || null;
     this.order = data.order !== undefined ? data.order : 0;
+    this.positionRelativeTo = data.positionRelativeTo || null; // ID of era to position after
+    this.positionType = data.positionType || null; // 'after' (only option for eras)
   }
 
   generateId() {
@@ -22,6 +24,8 @@ class Era {
       startTime: this.startTime,
       endTime: this.endTime,
       order: this.order,
+      positionRelativeTo: this.positionRelativeTo,
+      positionType: this.positionType,
     };
   }
 

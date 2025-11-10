@@ -52,9 +52,11 @@ class TimelineService {
     
     if (index === -1) return null;
     
-    timelines[index] = { ...timelines[index], ...updates };
+    // Update the timeline instance
+    const timeline = timelines[index];
+    Object.assign(timeline, updates);
     await storageService.saveTimelines(timelines.map(t => t.toJSON()));
-    return timelines[index];
+    return timeline;
   }
 
   /**
@@ -85,17 +87,12 @@ class TimelineService {
    */
   async getErasByTimelineId(timelineId) {
     const eras = await storageService.getEras();
-    return eras
+    const timelineEras = eras
       .filter(e => e.timelineId === timelineId)
-      .map(e => Era.fromJSON(e))
-      .sort((a, b) => {
-        // Sort by order, then by start time
-        if (a.order !== b.order) return a.order - b.order;
-        if (!a.startTime && !b.startTime) return 0;
-        if (!a.startTime) return 1;
-        if (!b.startTime) return -1;
-        return compareTimes(a.startTime, b.startTime);
-      });
+      .map(e => Era.fromJSON(e));
+    
+    // Sort eras considering relative positioning
+    return this.sortItemsWithRelativePositioning(timelineEras);
   }
 
   /**
@@ -117,8 +114,8 @@ class TimelineService {
   async createEra(eraData) {
     const era = new Era(eraData);
     const eras = await storageService.getEras();
-    eras.push(era);
-    await storageService.saveEras(eras.map(e => e.toJSON()));
+    eras.push(era.toJSON());
+    await storageService.saveEras(eras);
     return era;
   }
 
@@ -135,7 +132,7 @@ class TimelineService {
     if (index === -1) return null;
     
     eras[index] = { ...eras[index], ...updates };
-    await storageService.saveEras(eras.map(e => e.toJSON()));
+    await storageService.saveEras(eras);
     return Era.fromJSON(eras[index]);
   }
 
@@ -147,7 +144,7 @@ class TimelineService {
   async deleteEra(eraId) {
     const eras = await storageService.getEras();
     const filtered = eras.filter(e => e.id !== eraId);
-    await storageService.saveEras(filtered.map(e => e.toJSON()));
+    await storageService.saveEras(filtered);
     
     // Delete all related events
     const events = await this.getEventsByEraId(eraId);
@@ -194,8 +191,8 @@ class TimelineService {
   async createEvent(eventData) {
     const event = new Event(eventData);
     const events = await storageService.getEvents();
-    events.push(event);
-    await storageService.saveEvents(events.map(e => e.toJSON()));
+    events.push(event.toJSON());
+    await storageService.saveEvents(events);
     return event;
   }
 
@@ -212,7 +209,7 @@ class TimelineService {
     if (index === -1) return null;
     
     events[index] = { ...events[index], ...updates };
-    await storageService.saveEvents(events.map(e => e.toJSON()));
+    await storageService.saveEvents(events);
     return Event.fromJSON(events[index]);
   }
 
@@ -224,7 +221,7 @@ class TimelineService {
   async deleteEvent(eventId) {
     const events = await storageService.getEvents();
     const filtered = events.filter(e => e.id !== eventId);
-    await storageService.saveEvents(filtered.map(e => e.toJSON()));
+    await storageService.saveEvents(filtered);
     
     // Delete all related scenes
     const scenes = await this.getScenesByEventId(eventId);
@@ -271,8 +268,8 @@ class TimelineService {
   async createScene(sceneData) {
     const scene = new Scene(sceneData);
     const scenes = await storageService.getScenes();
-    scenes.push(scene);
-    await storageService.saveScenes(scenes.map(s => s.toJSON()));
+    scenes.push(scene.toJSON());
+    await storageService.saveScenes(scenes);
     return scene;
   }
 
@@ -289,7 +286,7 @@ class TimelineService {
     if (index === -1) return null;
     
     scenes[index] = { ...scenes[index], ...updates };
-    await storageService.saveScenes(scenes.map(s => s.toJSON()));
+    await storageService.saveScenes(scenes);
     return Scene.fromJSON(scenes[index]);
   }
 
@@ -301,7 +298,7 @@ class TimelineService {
   async deleteScene(sceneId) {
     const scenes = await storageService.getScenes();
     const filtered = scenes.filter(s => s.id !== sceneId);
-    await storageService.saveScenes(filtered.map(s => s.toJSON()));
+    await storageService.saveScenes(filtered);
     return true;
   }
 
@@ -313,18 +310,23 @@ class TimelineService {
    * @returns {Array} - Sorted array
    */
   sortItemsWithRelativePositioning(items) {
-    // Separate items with times and items with relative positioning
-    const itemsWithTime = items.filter(item => item.time);
-    const itemsWithRelative = items.filter(item => !item.time && item.positionRelativeTo);
+    // For eras, check startTime; for events/scenes, check time
+    const getTime = (item) => item.startTime !== undefined ? item.startTime : item.time;
     
-    // Sort items with time
+    // Separate items with times and items with relative positioning (but no time)
+    const itemsWithTime = items.filter(item => getTime(item));
+    const itemsWithRelativeOnly = items.filter(item => !getTime(item) && item.positionRelativeTo);
+    
+    // Sort items with time (including those that also have relative positioning)
     itemsWithTime.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
-      return compareTimes(a.time, b.time);
+      const timeA = getTime(a);
+      const timeB = getTime(b);
+      return compareTimes(timeA, timeB);
     });
     
-    // Insert items with relative positioning
-    for (const relativeItem of itemsWithRelative) {
+    // Insert items with relative positioning only (no custom time)
+    for (const relativeItem of itemsWithRelativeOnly) {
       const targetIndex = itemsWithTime.findIndex(
         item => item.id === relativeItem.positionRelativeTo
       );
@@ -343,7 +345,7 @@ class TimelineService {
     
     // Sort by order for items without time or relative positioning
     const itemsWithoutPositioning = items.filter(
-      item => !item.time && !item.positionRelativeTo
+      item => !getTime(item) && !item.positionRelativeTo
     );
     itemsWithoutPositioning.sort((a, b) => a.order - b.order);
     

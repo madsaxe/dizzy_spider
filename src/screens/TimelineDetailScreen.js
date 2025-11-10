@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useApp } from '../context/AppContext';
 import TimelineVisualization from '../components/TimelineVisualization';
 import timelineService from '../services/timelineService';
@@ -18,14 +18,7 @@ const TimelineDetailScreen = () => {
   const { createEra, createEvent, createScene, deleteEra, deleteEvent, deleteScene } = useApp();
   const [timeline, setTimeline] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadTimeline();
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadTimeline();
-    });
-    return unsubscribe;
-  }, [timelineId]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const loadTimeline = async () => {
     try {
@@ -39,9 +32,33 @@ const TimelineDetailScreen = () => {
     }
   };
 
-  const handleAddEra = () => {
+  const handleAddEra = useCallback(() => {
     navigation.navigate('CreateEra', { timelineId });
-  };
+  }, [navigation, timelineId]);
+
+  useEffect(() => {
+    loadTimeline();
+    
+    // Add header button to create era
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={handleAddEra}
+          style={styles.headerButton}
+        >
+          <Text style={styles.headerButtonText}>+ Add Era</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [timelineId, navigation, handleAddEra]);
+
+  // Refresh when screen comes into focus (e.g., after creating an era)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadTimeline();
+      setRefreshKey(prev => prev + 1); // Trigger TimelineVisualization refresh
+    }, [timelineId])
+  );
 
   const handleAddEvent = (eraId) => {
     navigation.navigate('CreateEvent', { eraId });
@@ -134,6 +151,7 @@ const TimelineDetailScreen = () => {
         </Text>
       </View>
       <TimelineVisualization
+        key={`timeline-${timelineId}-${refreshKey}`}
         timelineId={timelineId}
         isFictional={timeline.isFictional}
         onAddEra={handleAddEra}
@@ -185,6 +203,18 @@ const styles = StyleSheet.create({
   type: {
     fontSize: 14,
     color: '#999',
+  },
+  headerButton: {
+    marginRight: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#007AFF',
+    borderRadius: 6,
+  },
+  headerButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 
