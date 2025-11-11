@@ -1,6 +1,10 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { StatusBar, View, StyleSheet } from 'react-native';
+import { NavigationContainer, DarkTheme as NavigationDarkTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Provider as PaperProvider, MD3DarkTheme } from 'react-native-paper';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { AppProvider } from './src/context/AppContext';
 import { TimelineThemeProvider } from './src/context/TimelineThemeContext';
 import TimelineListScreen from './src/screens/TimelineListScreen';
@@ -16,28 +20,77 @@ import TimelineSettingsScreen from './src/screens/TimelineSettingsScreen';
 
 const Stack = createStackNavigator();
 
+// Custom dark theme for Paper
+const paperTheme = {
+  ...MD3DarkTheme,
+  colors: {
+    ...MD3DarkTheme.colors,
+    primary: '#8B5CF6',
+    secondary: '#06B6D4',
+    tertiary: '#F59E0B',
+    error: '#EC4899',
+    background: '#1A1A2E',
+    surface: '#16213E',
+    surfaceVariant: '#2A2A3E',
+    onPrimary: '#FFFFFF',
+    onSecondary: '#FFFFFF',
+    onBackground: '#E0E0E0',
+    onSurface: '#E0E0E0',
+    onSurfaceVariant: '#9CA3AF',
+    outline: '#2A2A3E',
+  },
+};
+
+// Custom dark theme for Navigation
+const navigationTheme = {
+  ...NavigationDarkTheme,
+  colors: {
+    ...NavigationDarkTheme.colors,
+    primary: '#8B5CF6',
+    background: '#1A1A2E',
+    card: '#16213E',
+    text: '#E0E0E0',
+    border: '#2A2A3E',
+    notification: '#EC4899',
+  },
+};
+
 const App = () => {
   return (
-    <AppProvider>
-      <TimelineThemeProvider>
-        <NavigationContainer>
-        <Stack.Navigator
-          initialRouteName="TimelineList"
-          screenOptions={{
-            headerStyle: {
-              backgroundColor: '#007AFF',
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-          }}
-        >
-          <Stack.Screen
-            name="TimelineList"
-            component={TimelineListScreen}
-            options={{ title: 'Timeline App' }}
-          />
+    <SafeAreaProvider>
+      <PaperProvider 
+        theme={paperTheme}
+        settings={{
+          icon: (props) => <MaterialCommunityIcons {...props} />,
+        }}
+      >
+        <View style={styles.rootContainer}>
+          <StatusBar barStyle="light-content" backgroundColor="#1A1A2E" translucent={false} />
+          <AppProvider>
+            <TimelineThemeProvider>
+              <NavigationContainer theme={navigationTheme}>
+          <Stack.Navigator
+            initialRouteName="TimelineList"
+            screenOptions={{
+              headerStyle: {
+                backgroundColor: '#1A1A2E',
+                height: 0,
+                elevation: 0,
+                shadowOpacity: 0,
+              },
+              headerShown: false,
+              headerTintColor: '#E0E0E0',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+                color: '#E0E0E0',
+              },
+            }}
+          >
+            <Stack.Screen
+              name="TimelineList"
+              component={TimelineListScreen}
+              options={{ headerShown: false }}
+            />
           <Stack.Screen
             name="CreateTimeline"
             component={CreateTimelineScreen}
@@ -46,7 +99,7 @@ const App = () => {
           <Stack.Screen
             name="TimelineDetail"
             component={TimelineDetailScreen}
-            options={{ title: 'Timeline' }}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="CreateEra"
@@ -87,8 +140,20 @@ const App = () => {
       </NavigationContainer>
       </TimelineThemeProvider>
     </AppProvider>
+      </View>
+      </PaperProvider>
+    </SafeAreaProvider>
   );
 };
+
+const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#1A1A2E',
+  },
+});
 
 export default App;
 

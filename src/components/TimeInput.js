@@ -1,11 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import { Text, TextInput, Button, useTheme } from 'react-native-paper';
 import DatePicker from 'react-native-date-picker';
 
 const TimeInput = ({
@@ -21,11 +19,65 @@ const TimeInput = ({
   startValue,
   endValue,
 }) => {
+  const theme = useTheme();
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [datePickerMode, setDatePickerMode] = useState('start'); // 'start' or 'end'
   
-  // Always use text input for fictional timelines or relational items
-  const useTextInput = isFictional || isRelational;
+  // For fictional timelines, use manual date entry
+  const useManualEntry = isFictional && !isRelational;
+  
+  // Parse date string to year, month, day
+  const parseDate = (dateString) => {
+    if (!dateString) return { year: '', month: '', day: '' };
+    try {
+      const date = new Date(dateString);
+      return {
+        year: date.getFullYear().toString(),
+        month: (date.getMonth() + 1).toString().padStart(2, '0'),
+        day: date.getDate().toString().padStart(2, '0'),
+      };
+    } catch {
+      return { year: '', month: '', day: '' };
+    }
+  };
+
+  // Format year, month, day to ISO date string
+  const formatDate = (year, month, day) => {
+    if (!year || !month || !day) return null;
+    try {
+      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      if (isNaN(date.getTime())) return null;
+      return date.toISOString();
+    } catch {
+      return null;
+    }
+  };
+
+  // Manual entry state for fictional timelines
+  const [startYear, setStartYear] = useState('');
+  const [startMonth, setStartMonth] = useState('');
+  const [startDay, setStartDay] = useState('');
+  const [endYear, setEndYear] = useState('');
+  const [endMonth, setEndMonth] = useState('');
+  const [endDay, setEndDay] = useState('');
+
+  useEffect(() => {
+    if (mode === 'range' && useManualEntry) {
+      const start = parseDate(startValue);
+      setStartYear(start.year);
+      setStartMonth(start.month);
+      setStartDay(start.day);
+      const end = parseDate(endValue);
+      setEndYear(end.year);
+      setEndMonth(end.month);
+      setEndDay(end.day);
+    } else if (mode === 'single' && useManualEntry) {
+      const parsed = parseDate(value);
+      setStartYear(parsed.year);
+      setStartMonth(parsed.month);
+      setStartDay(parsed.day);
+    }
+  }, [startValue, endValue, value, mode, useManualEntry]);
 
   const handleTextChange = (text) => {
     if (mode === 'single') {
@@ -47,57 +99,175 @@ const TimeInput = ({
 
   const handleDateChange = (date) => {
     if (mode === 'single') {
-      onChange(date.toISOString());
+      // Set time to midnight for date-only
+      const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      onChange(dateOnly.toISOString());
       setShowDatePicker(false);
     }
   };
 
   const handleStartDateChange = (date) => {
     if (onStartTimeChange) {
-      onStartTimeChange(date.toISOString());
+      // Set time to midnight for date-only
+      const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      onStartTimeChange(dateOnly.toISOString());
     }
   };
 
   const handleEndDateChange = (date) => {
     if (onEndTimeChange) {
-      onEndTimeChange(date.toISOString());
+      // Set time to midnight for date-only
+      const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      onEndTimeChange(dateOnly.toISOString());
+    }
+  };
+
+  // Manual entry handlers for fictional timelines
+  const handleManualStartChange = (field, text) => {
+    let newYear = startYear;
+    let newMonth = startMonth;
+    let newDay = startDay;
+    
+    if (field === 'year') {
+      newYear = text.replace(/[^0-9]/g, '').slice(0, 4);
+      setStartYear(newYear);
+    } else if (field === 'month') {
+      newMonth = text.replace(/[^0-9]/g, '').slice(0, 2);
+      if (parseInt(newMonth) > 12) newMonth = '12';
+      setStartMonth(newMonth);
+    } else if (field === 'day') {
+      newDay = text.replace(/[^0-9]/g, '').slice(0, 2);
+      if (parseInt(newDay) > 31) newDay = '31';
+      setStartDay(newDay);
+    }
+    
+    const dateString = formatDate(newYear, newMonth, newDay);
+    if (onStartTimeChange && dateString) {
+      onStartTimeChange(dateString);
+    }
+  };
+
+  const handleManualEndChange = (field, text) => {
+    let newYear = endYear;
+    let newMonth = endMonth;
+    let newDay = endDay;
+    
+    if (field === 'year') {
+      newYear = text.replace(/[^0-9]/g, '').slice(0, 4);
+      setEndYear(newYear);
+    } else if (field === 'month') {
+      newMonth = text.replace(/[^0-9]/g, '').slice(0, 2);
+      if (parseInt(newMonth) > 12) newMonth = '12';
+      setEndMonth(newMonth);
+    } else if (field === 'day') {
+      newDay = text.replace(/[^0-9]/g, '').slice(0, 2);
+      if (parseInt(newDay) > 31) newDay = '31';
+      setEndDay(newDay);
+    }
+    
+    const dateString = formatDate(newYear, newMonth, newDay);
+    if (onEndTimeChange && dateString) {
+      onEndTimeChange(dateString);
+    }
+  };
+
+  const handleManualSingleChange = (field, text) => {
+    let newYear = startYear;
+    let newMonth = startMonth;
+    let newDay = startDay;
+    
+    if (field === 'year') {
+      newYear = text.replace(/[^0-9]/g, '').slice(0, 4);
+      setStartYear(newYear);
+    } else if (field === 'month') {
+      newMonth = text.replace(/[^0-9]/g, '').slice(0, 2);
+      if (parseInt(newMonth) > 12) newMonth = '12';
+      setStartMonth(newMonth);
+    } else if (field === 'day') {
+      newDay = text.replace(/[^0-9]/g, '').slice(0, 2);
+      if (parseInt(newDay) > 31) newDay = '31';
+      setStartDay(newDay);
+    }
+    
+    const dateString = formatDate(newYear, newMonth, newDay);
+    if (onChange && dateString) {
+      onChange(dateString);
     }
   };
 
   if (mode === 'range') {
     return (
       <View style={styles.container}>
-        {label && <Text style={styles.label}>{label}</Text>}
+        {label && <Text variant="titleMedium" style={styles.label}>{label}</Text>}
         <View style={styles.rangeContainer}>
           <View style={styles.rangeInput}>
-            <Text style={styles.rangeLabel}>Start</Text>
-            {useTextInput ? (
+            <Text variant="labelLarge" style={styles.rangeLabel}>Start</Text>
+            {useManualEntry ? (
+              <View style={styles.manualDateContainer}>
+                <View style={styles.manualDateField}>
+                  <Text variant="labelSmall" style={styles.manualDateLabel}>Year</Text>
+                  <TextInput
+                    mode="outlined"
+                    value={startYear}
+                    onChangeText={(text) => handleManualStartChange('year', text)}
+                    placeholder="YYYY"
+                    keyboardType="numeric"
+                    style={styles.manualDateInput}
+                    contentStyle={{ textAlign: 'center' }}
+                  />
+                </View>
+                <View style={styles.manualDateField}>
+                  <Text variant="labelSmall" style={styles.manualDateLabel}>Month</Text>
+                  <TextInput
+                    mode="outlined"
+                    value={startMonth}
+                    onChangeText={(text) => handleManualStartChange('month', text)}
+                    placeholder="MM"
+                    keyboardType="numeric"
+                    style={styles.manualDateInput}
+                    contentStyle={{ textAlign: 'center' }}
+                  />
+                </View>
+                <View style={styles.manualDateField}>
+                  <Text variant="labelSmall" style={styles.manualDateLabel}>Day</Text>
+                  <TextInput
+                    mode="outlined"
+                    value={startDay}
+                    onChangeText={(text) => handleManualStartChange('day', text)}
+                    placeholder="DD"
+                    keyboardType="numeric"
+                    style={styles.manualDateInput}
+                    contentStyle={{ textAlign: 'center' }}
+                  />
+                </View>
+              </View>
+            ) : isRelational ? (
               <TextInput
-                style={styles.textInput}
+                mode="outlined"
                 value={startValue || ''}
                 onChangeText={handleTextChangeStart}
                 placeholder="Enter start time"
-                placeholderTextColor="#999"
+                style={styles.textInput}
               />
             ) : (
               <>
-                <TouchableOpacity
-                  style={styles.dateButton}
+                <Button
+                  mode="outlined"
                   onPress={() => {
                     setDatePickerMode('start');
                     setShowDatePicker(true);
                   }}
+                  style={styles.dateButton}
                 >
-                  <Text style={styles.dateButtonText}>
-                    {startValue
-                      ? new Date(startValue).toLocaleDateString()
-                      : 'Select start date'}
-                  </Text>
-                </TouchableOpacity>
+                  {startValue
+                    ? new Date(startValue).toLocaleDateString()
+                    : 'Select start date'}
+                </Button>
                 <DatePicker
                   modal
                   open={showDatePicker && datePickerMode === 'start'}
                   date={startValue ? new Date(startValue) : new Date()}
+                  mode="date"
                   onConfirm={(date) => {
                     handleStartDateChange(date);
                     setShowDatePicker(false);
@@ -108,34 +278,73 @@ const TimeInput = ({
             )}
           </View>
           <View style={styles.rangeInput}>
-            <Text style={styles.rangeLabel}>End</Text>
-            {useTextInput ? (
+            <Text variant="labelLarge" style={styles.rangeLabel}>End</Text>
+            {useManualEntry ? (
+              <View style={styles.manualDateContainer}>
+                <View style={styles.manualDateField}>
+                  <Text variant="labelSmall" style={styles.manualDateLabel}>Year</Text>
+                  <TextInput
+                    mode="outlined"
+                    value={endYear}
+                    onChangeText={(text) => handleManualEndChange('year', text)}
+                    placeholder="YYYY"
+                    keyboardType="numeric"
+                    style={styles.manualDateInput}
+                    contentStyle={{ textAlign: 'center' }}
+                  />
+                </View>
+                <View style={styles.manualDateField}>
+                  <Text variant="labelSmall" style={styles.manualDateLabel}>Month</Text>
+                  <TextInput
+                    mode="outlined"
+                    value={endMonth}
+                    onChangeText={(text) => handleManualEndChange('month', text)}
+                    placeholder="MM"
+                    keyboardType="numeric"
+                    style={styles.manualDateInput}
+                    contentStyle={{ textAlign: 'center' }}
+                  />
+                </View>
+                <View style={styles.manualDateField}>
+                  <Text variant="labelSmall" style={styles.manualDateLabel}>Day</Text>
+                  <TextInput
+                    mode="outlined"
+                    value={endDay}
+                    onChangeText={(text) => handleManualEndChange('day', text)}
+                    placeholder="DD"
+                    keyboardType="numeric"
+                    style={styles.manualDateInput}
+                    contentStyle={{ textAlign: 'center' }}
+                  />
+                </View>
+              </View>
+            ) : isRelational ? (
               <TextInput
-                style={styles.textInput}
+                mode="outlined"
                 value={endValue || ''}
                 onChangeText={handleTextChangeEnd}
                 placeholder="Enter end time"
-                placeholderTextColor="#999"
+                style={styles.textInput}
               />
             ) : (
               <>
-                <TouchableOpacity
-                  style={styles.dateButton}
+                <Button
+                  mode="outlined"
                   onPress={() => {
                     setDatePickerMode('end');
                     setShowDatePicker(true);
                   }}
+                  style={styles.dateButton}
                 >
-                  <Text style={styles.dateButtonText}>
-                    {endValue
-                      ? new Date(endValue).toLocaleDateString()
-                      : 'Select end date'}
-                  </Text>
-                </TouchableOpacity>
+                  {endValue
+                    ? new Date(endValue).toLocaleDateString()
+                    : 'Select end date'}
+                </Button>
                 <DatePicker
                   modal
                   open={showDatePicker && datePickerMode === 'end'}
                   date={endValue ? new Date(endValue) : new Date()}
+                  mode="date"
                   onConfirm={(date) => {
                     handleEndDateChange(date);
                     setShowDatePicker(false);
@@ -152,31 +361,70 @@ const TimeInput = ({
 
   return (
     <View style={styles.container}>
-      {label && <Text style={styles.label}>{label}</Text>}
-      {useTextInput ? (
+      {label && <Text variant="titleMedium" style={styles.label}>{label}</Text>}
+      {useManualEntry ? (
+        <View style={styles.manualDateContainer}>
+          <View style={styles.manualDateField}>
+            <Text variant="labelSmall" style={styles.manualDateLabel}>Year</Text>
+            <TextInput
+              mode="outlined"
+              value={startYear}
+              onChangeText={(text) => handleManualSingleChange('year', text)}
+              placeholder="YYYY"
+              keyboardType="numeric"
+              style={styles.manualDateInput}
+              contentStyle={{ textAlign: 'center' }}
+            />
+          </View>
+          <View style={styles.manualDateField}>
+            <Text variant="labelSmall" style={styles.manualDateLabel}>Month</Text>
+            <TextInput
+              mode="outlined"
+              value={startMonth}
+              onChangeText={(text) => handleManualSingleChange('month', text)}
+              placeholder="MM"
+              keyboardType="numeric"
+              style={styles.manualDateInput}
+              contentStyle={{ textAlign: 'center' }}
+            />
+          </View>
+          <View style={styles.manualDateField}>
+            <Text variant="labelSmall" style={styles.manualDateLabel}>Day</Text>
+            <TextInput
+              mode="outlined"
+              value={startDay}
+              onChangeText={(text) => handleManualSingleChange('day', text)}
+              placeholder="DD"
+              keyboardType="numeric"
+              style={styles.manualDateInput}
+              contentStyle={{ textAlign: 'center' }}
+            />
+          </View>
+        </View>
+      ) : isRelational ? (
         <TextInput
-          style={styles.textInput}
+          mode="outlined"
           value={value || ''}
           onChangeText={handleTextChange}
           placeholder={placeholder}
-          placeholderTextColor="#999"
+          style={styles.textInput}
         />
       ) : (
         <>
-          <TouchableOpacity
-            style={styles.dateButton}
+          <Button
+            mode="outlined"
             onPress={() => setShowDatePicker(true)}
+            style={styles.dateButton}
           >
-            <Text style={styles.dateButtonText}>
-              {value
-                ? new Date(value).toLocaleDateString()
-                : 'Select date'}
-            </Text>
-          </TouchableOpacity>
+            {value
+              ? new Date(value).toLocaleDateString()
+              : 'Select date'}
+          </Button>
           <DatePicker
             modal
             open={showDatePicker}
             date={value ? new Date(value) : new Date()}
+            mode="date"
             onConfirm={handleDateChange}
             onCancel={() => setShowDatePicker(false)}
           />
@@ -191,29 +439,13 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   label: {
-    fontSize: 16,
-    fontWeight: '600',
     marginBottom: 8,
-    color: '#333',
   },
   textInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
+    marginBottom: 8,
   },
   dateButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#fff',
-  },
-  dateButtonText: {
-    fontSize: 16,
-    color: '#333',
+    marginBottom: 8,
   },
   rangeContainer: {
     flexDirection: 'row',
@@ -224,10 +456,20 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   rangeLabel: {
-    fontSize: 14,
-    fontWeight: '500',
     marginBottom: 4,
-    color: '#666',
+  },
+  manualDateContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  manualDateField: {
+    flex: 1,
+  },
+  manualDateLabel: {
+    marginBottom: 4,
+  },
+  manualDateInput: {
+    marginBottom: 0,
   },
 });
 

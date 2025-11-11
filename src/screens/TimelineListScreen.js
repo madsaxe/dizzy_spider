@@ -1,19 +1,25 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
-  Text,
   FlatList,
-  TouchableOpacity,
   StyleSheet,
   Alert,
+  Animated,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Text, Button, Card, FAB, useTheme, IconButton } from 'react-native-paper';
 import { useApp } from '../context/AppContext';
 import { useNavigation } from '@react-navigation/native';
+import seedDataService from '../services/seedDataService';
 
 const TimelineListScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const { timelines, loading, refreshTimelines, deleteTimeline, userProgress } = useApp();
   const [refreshing, setRefreshing] = useState(false);
+  const swipeableRefs = useRef({});
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -38,6 +44,10 @@ const TimelineListScreen = () => {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            // Close the swipeable if it's open
+            if (swipeableRefs.current[timeline.id]) {
+              swipeableRefs.current[timeline.id].close();
+            }
             await deleteTimeline(timeline.id);
             await refreshTimelines();
           },
@@ -46,51 +56,144 @@ const TimelineListScreen = () => {
     );
   };
 
-  const renderTimelineItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.timelineItem}
-      onPress={() => navigation.navigate('TimelineDetail', { timelineId: item.id })}
-    >
-      <View style={styles.timelineContent}>
-        <Text style={styles.timelineTitle}>{item.title}</Text>
-        {item.description && (
-          <Text style={styles.timelineDescription} numberOfLines={2}>
-            {item.description}
-          </Text>
-        )}
-        <View style={styles.timelineMeta}>
-          <Text style={styles.timelineType}>
-            {item.isFictional ? '📚 Fictional' : '📅 Historical'}
-          </Text>
-          <Text style={styles.timelineDate}>
-            Created {new Date(item.createdAt).toLocaleDateString()}
-          </Text>
-        </View>
+  const renderRightActions = (progress, dragX, timeline) => {
+    const scale = dragX.interpolate({
+      inputRange: [-100, 0],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+
+    return (
+      <View style={styles.rightAction}>
+        <Animated.View style={[styles.actionContent, { transform: [{ scale }] }]}>
+          <IconButton
+            icon="delete"
+            iconColor="#FFFFFF"
+            size={24}
+            onPress={() => handleDelete(timeline)}
+            style={styles.deleteIcon}
+          />
+          <Text style={styles.actionText}>Delete</Text>
+        </Animated.View>
       </View>
-      <TouchableOpacity
-        style={styles.deleteButton}
-        onPress={() => handleDelete(item)}
+    );
+  };
+
+  const handlePopulateExamples = async () => {
+    Alert.alert(
+      'Populate Example Timelines',
+      'This will create two example timelines: one historical (World War II) and one fictional (The Chronicles of Eldoria). Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Create Examples',
+          onPress: async () => {
+            try {
+              await seedDataService.populateAllExamples();
+              await refreshTimelines();
+              Alert.alert('Success', 'Example timelines created successfully!');
+            } catch (error) {
+              console.error('Error populating examples:', error);
+              Alert.alert('Error', 'Failed to create example timelines');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderTimelineItem = ({ item }) => {
+    const closeOtherSwipeables = () => {
+      Object.keys(swipeableRefs.current).forEach((key) => {
+        if (key !== item.id && swipeableRefs.current[key]) {
+          swipeableRefs.current[key].close();
+        }
+      });
+    };
+
+    return (
+      <Swipeable
+        ref={(ref) => {
+          if (ref) {
+            swipeableRefs.current[item.id] = ref;
+          } else {
+            delete swipeableRefs.current[item.id];
+          }
+        }}
+        renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item)}
+        rightThreshold={40}
+        onSwipeableWillOpen={closeOtherSwipeables}
       >
-        <Text style={styles.deleteButtonText}>Delete</Text>
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
+        <Card
+          style={styles.timelineItem}
+          onPress={() => {
+            // Close any open swipeables before navigating
+            Object.values(swipeableRefs.current).forEach((ref) => {
+              if (ref) ref.close();
+            });
+            navigation.navigate('TimelineDetail', { timelineId: item.id });
+          }}
+        >
+        <Card.Content style={styles.timelineContent}>
+          <Text variant="titleMedium" style={styles.timelineTitle}>{item.title}</Text>
+          {item.description && (
+            <Text variant="bodySmall" style={styles.timelineDescription} numberOfLines={2}>
+              {item.description}
+            </Text>
+          )}
+          <View style={styles.timelineMeta}>
+            <Text variant="labelSmall" style={styles.timelineType}>
+              {item.isFictional ? '📚 Fictional' : '📅 Historical'}
+            </Text>
+            <Text variant="labelSmall" style={styles.timelineDate}>
+              Created {new Date(item.createdAt).toLocaleDateString()}
+            </Text>
+          </View>
+        </Card.Content>
+        <Card.Actions>
+          <Button
+            mode="text"
+            onPress={() => {
+              // Close any open swipeables before deleting
+              Object.values(swipeableRefs.current).forEach((ref) => {
+                if (ref) ref.close();
+              });
+              handleDelete(item);
+            }}
+            textColor="#EF4444"
+          >
+            Delete
+          </Button>
+        </Card.Actions>
+      </Card>
+    </Swipeable>
+    );
+  };
 
   if (loading && timelines.length === 0) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading timelines...</Text>
+        <Text variant="bodyLarge">Loading timelines...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Timelines</Text>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
+        <View style={styles.headerTop}>
+          <Text variant="headlineSmall" style={styles.headerTitle}>My Timelines</Text>
+          <Button
+            mode="contained"
+            onPress={handlePopulateExamples}
+            style={styles.exampleButton}
+          >
+            📚 Examples
+          </Button>
+        </View>
         <View style={styles.progressContainer}>
-          <Text style={styles.pointsText}>⭐ {userProgress.points} points</Text>
-          <Text style={styles.achievementsText}>
+          <Text variant="bodySmall" style={styles.pointsText}>⭐ {userProgress.points} points</Text>
+          <Text variant="bodySmall" style={styles.achievementsText}>
             🏆 {userProgress.achievements.length} achievements
           </Text>
         </View>
@@ -102,27 +205,36 @@ const TimelineListScreen = () => {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No timelines yet</Text>
-            <Text style={styles.emptySubtext}>
+            <Text variant="titleLarge" style={styles.emptyText}>No timelines yet</Text>
+            <Text variant="bodyMedium" style={styles.emptySubtext}>
               Create your first timeline to get started!
             </Text>
-            <TouchableOpacity
-              style={styles.createButton}
-              onPress={() => navigation.navigate('CreateTimeline')}
-            >
-              <Text style={styles.createButtonText}>Create Timeline</Text>
-            </TouchableOpacity>
+            <View style={styles.emptyButtons}>
+              <Button
+                mode="contained"
+                onPress={() => navigation.navigate('CreateTimeline')}
+                style={[styles.createButton, { marginRight: 6 }]}
+              >
+                Create Timeline
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handlePopulateExamples}
+                style={[styles.exampleButtonEmpty, { marginLeft: 6 }]}
+              >
+                📚 Load Examples
+              </Button>
+            </View>
           </View>
         }
         refreshing={refreshing}
         onRefresh={handleRefresh}
       />
-      <TouchableOpacity
+      <FAB
+        icon="plus"
         style={styles.fab}
         onPress={() => navigation.navigate('CreateTimeline')}
-      >
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
+      />
     </View>
   );
 };
@@ -130,63 +242,51 @@ const TimelineListScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    width: '100%',
+    height: '100%',
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 20,
-    paddingTop: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 12,
+    flex: 1,
+  },
+  exampleButton: {
+    marginLeft: 8,
   },
   progressContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
   },
   pointsText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
+    opacity: 0.7,
   },
   achievementsText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
+    opacity: 0.7,
   },
   listContent: {
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   timelineItem: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    marginBottom: 10,
   },
   timelineContent: {
-    flex: 1,
+    paddingBottom: 0,
   },
   timelineTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   timelineDescription: {
-    fontSize: 14,
-    color: '#666',
     marginBottom: 8,
+    opacity: 0.7,
   },
   timelineMeta: {
     flexDirection: 'row',
@@ -194,81 +294,70 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   timelineType: {
-    fontSize: 12,
-    color: '#999',
+    color: '#8B5CF6',
   },
   timelineDate: {
-    fontSize: 12,
-    color: '#999',
-  },
-  deleteButton: {
-    justifyContent: 'center',
-    paddingLeft: 12,
-  },
-  deleteButtonText: {
-    color: '#FF3B30',
-    fontSize: 14,
-    fontWeight: '600',
+    opacity: 0.6,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    fontSize: 16,
-    color: '#666',
-  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
-    marginTop: 100,
   },
   emptyText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
     marginBottom: 8,
   },
   emptySubtext: {
-    fontSize: 14,
-    color: '#666',
     textAlign: 'center',
     marginBottom: 24,
+    opacity: 0.7,
+  },
+  emptyButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   createButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    // Paper Button handles styling
   },
-  createButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  exampleButtonEmpty: {
+    // Paper Button handles styling
   },
   fab: {
     position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    right: 24,
+    bottom: 24,
   },
-  fabText: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '300',
+  rightAction: {
+    flex: 1,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    borderRadius: 10,
+    marginBottom: 10,
+    marginRight: 0,
+  },
+  actionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    height: '100%',
+  },
+  deleteIcon: {
+    margin: 0,
+  },
+  actionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
 

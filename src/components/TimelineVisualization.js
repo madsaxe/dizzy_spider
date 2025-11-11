@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import {
   View,
   Text,
@@ -25,7 +25,7 @@ import { useTimelineZoom } from '../context/TimelineZoomContext';
 import { useTimelineTheme } from '../context/TimelineThemeContext';
 import AlternatingTimeline from './AlternatingTimeline';
 
-const TimelineVisualization = ({
+const TimelineVisualization = forwardRef(({
   timelineId,
   isFictional = false,
   onEraPress,
@@ -40,13 +40,22 @@ const TimelineVisualization = ({
   onAddEra,
   onAddEvent,
   onAddScene,
-}) => {
+}, ref) => {
+  const alternatingTimelineRef = useRef(null);
+
+  useImperativeHandle(ref, () => ({
+    scrollToItem: (itemId) => {
+      if (alternatingTimelineRef.current) {
+        alternatingTimelineRef.current.scrollToItem(itemId);
+      }
+    },
+  }));
   const [eras, setEras] = useState([]);
   const [events, setEvents] = useState({});
   const [scenes, setScenes] = useState({});
   const [loading, setLoading] = useState(true);
   const [timelineData, setTimelineData] = useState([]);
-  const [viewMode, setViewMode] = useState('simple'); // 'simple' | 'advanced'
+  const [viewMode, setViewMode] = useState('advanced'); // 'simple' | 'advanced'
   const [allTimelineItems, setAllTimelineItems] = useState([]);
   
   const {
@@ -296,8 +305,8 @@ const TimelineVisualization = ({
         )}
         <Text style={styles.timelineDetailTime}>{rowData.time}</Text>
         
-        {/* Add action buttons for creating child items */}
-        {itemType === 'era' && onAddEvent && (
+        {/* Add action buttons for creating child items - context-aware based on zoom level */}
+        {zoomLevel === 'eras' && itemType === 'era' && onAddEvent && (
           <TouchableOpacity
             style={styles.addChildButton}
             onPress={() => onAddEvent(item.id)}
@@ -305,7 +314,7 @@ const TimelineVisualization = ({
             <Text style={styles.addChildButtonText}>+ Add Event to this Era</Text>
           </TouchableOpacity>
         )}
-        {itemType === 'event' && onAddScene && (
+        {zoomLevel === 'events' && itemType === 'event' && onAddScene && (
           <TouchableOpacity
             style={styles.addChildButton}
             onPress={() => onAddScene(item.id)}
@@ -362,6 +371,7 @@ const TimelineVisualization = ({
               <Animated.View style={[styles.timelineContainer, viewMode === 'advanced' && animatedStyle]}>
                 {viewMode === 'advanced' ? (
             <AlternatingTimeline
+              ref={alternatingTimelineRef}
               data={timelineData}
               onItemPress={handleTimelineEventPress}
               onRefresh={loadTimelineData}
@@ -373,12 +383,27 @@ const TimelineVisualization = ({
               showImages={true}
               fontSizes={theme.fontSizes}
               spacing={theme.spacing}
+              isFictional={isFictional}
               footerComponent={
-                onAddEra ? (
-                  <TouchableOpacity style={styles.addButton} onPress={onAddEra}>
-                    <Text style={styles.addButtonText}>+ Add Era</Text>
-                  </TouchableOpacity>
-                ) : null
+                (() => {
+                  if (zoomLevel === 'eras') {
+                    // At eras level, show add event buttons for each era
+                    return null; // Will be handled in timeline items
+                  } else if (zoomLevel === 'events' && selectedEraId && onAddEvent) {
+                    return (
+                      <TouchableOpacity style={styles.addButton} onPress={() => onAddEvent(selectedEraId)}>
+                        <Text style={styles.addButtonText}>+ Add Event</Text>
+                      </TouchableOpacity>
+                    );
+                  } else if (zoomLevel === 'scenes' && selectedEventId && onAddScene) {
+                    return (
+                      <TouchableOpacity style={styles.addButton} onPress={() => onAddScene(selectedEventId)}>
+                        <Text style={styles.addButtonText}>+ Add Scene</Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                  return null;
+                })()
               }
             />
           ) : (
@@ -396,11 +421,25 @@ const TimelineVisualization = ({
                 <RefreshControl refreshing={loading} onRefresh={loadTimelineData} />
               }
               ListFooterComponent={
-                onAddEra ? (
-                  <TouchableOpacity style={styles.addButton} onPress={onAddEra}>
-                    <Text style={styles.addButtonText}>+ Add Era</Text>
-                  </TouchableOpacity>
-                ) : null
+                (() => {
+                  if (zoomLevel === 'eras') {
+                    // At eras level, show add event buttons for each era
+                    return null; // Will be handled in timeline items
+                  } else if (zoomLevel === 'events' && selectedEraId && onAddEvent) {
+                    return (
+                      <TouchableOpacity style={styles.addButton} onPress={() => onAddEvent(selectedEraId)}>
+                        <Text style={styles.addButtonText}>+ Add Event</Text>
+                      </TouchableOpacity>
+                    );
+                  } else if (zoomLevel === 'scenes' && selectedEventId && onAddScene) {
+                    return (
+                      <TouchableOpacity style={styles.addButton} onPress={() => onAddScene(selectedEventId)}>
+                        <Text style={styles.addButtonText}>+ Add Scene</Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                  return null;
+                })()
               }
               options={{
                 style: { paddingTop: 5, paddingLeft: 5, paddingRight: 5 },
@@ -411,22 +450,24 @@ const TimelineVisualization = ({
             </PinchGestureHandler>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#1A1A2E',
   },
   controlsBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#0F0F1E',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#2A2A3E',
   },
   zoomControls: {
     flexDirection: 'row',
@@ -434,33 +475,43 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   breadcrumb: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#333',
+    color: '#FFFFFF',
     marginRight: 12,
+    letterSpacing: -0.2,
   },
   zoomButton: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#007AFF',
-    borderRadius: 6,
+    paddingVertical: 7,
+    backgroundColor: '#8B5CF6',
+    borderRadius: 10,
     marginRight: 8,
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 2,
   },
   zoomButtonText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+    letterSpacing: 0.1,
   },
   viewToggle: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 6,
+    paddingVertical: 7,
+    backgroundColor: '#1A1A2E',
+    borderRadius: 10,
+    borderWidth: 0.5,
+    borderColor: '#2A2A3E',
   },
   viewToggleText: {
-    color: '#007AFF',
+    color: '#8B5CF6',
     fontSize: 12,
     fontWeight: '600',
+    letterSpacing: 0.1,
   },
   timelineContainer: {
     flex: 1,
@@ -473,7 +524,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#666',
+    color: '#E0E0E0',
   },
   emptyContainer: {
     flex: 1,
@@ -483,7 +534,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#666',
+    color: '#E0E0E0',
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -494,23 +545,25 @@ const styles = StyleSheet.create({
     borderRadius: 13,
   },
   descriptionStyle: {
-    color: '#666',
+    color: '#B0B0B0',
     fontSize: 14,
   },
   titleStyle: {
-    color: '#333',
+    color: '#E0E0E0',
     fontSize: 16,
     fontWeight: '600',
   },
   detailContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: '#1A1A2E',
+    borderRadius: 14,
+    padding: 16,
     marginBottom: 10,
+    borderWidth: 0.5,
+    borderColor: '#2A2A3E',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
     elevation: 2,
   },
   timelineDetail: {
@@ -523,68 +576,81 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   timelineDetailTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#333',
+    color: '#FFFFFF',
     flex: 1,
+    letterSpacing: -0.3,
   },
   timelineDetailActions: {
     flexDirection: 'row',
   },
   actionButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     marginLeft: 8,
-    borderRadius: 4,
-    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    backgroundColor: '#1A1A2E',
+    borderWidth: 0.5,
+    borderColor: '#2A2A3E',
   },
   deleteButton: {
-    backgroundColor: '#ffebee',
+    backgroundColor: '#1A0F0F',
+    borderColor: '#3A1A1A',
   },
   actionText: {
-    fontSize: 12,
-    color: '#007AFF',
+    fontSize: 11,
+    color: '#8B5CF6',
     fontWeight: '600',
+    letterSpacing: 0.1,
   },
   deleteText: {
-    color: '#FF3B30',
+    color: '#EF4444',
   },
   timelineDetailDescription: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 12,
+    color: '#9CA3AF',
     marginBottom: 8,
+    lineHeight: 17,
   },
   timelineDetailTime: {
-    fontSize: 12,
-    color: '#999',
-    fontStyle: 'italic',
+    fontSize: 11,
+    color: '#8B5CF6',
+    fontWeight: '500',
   },
   addButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 8,
+    backgroundColor: '#8B5CF6',
+    padding: 14,
+    borderRadius: 12,
     alignItems: 'center',
     margin: 16,
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   addButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
   addChildButton: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#1A1A2E',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     marginTop: 12,
     borderWidth: 1,
-    borderColor: '#007AFF',
+    borderColor: '#8B5CF6',
     borderStyle: 'dashed',
   },
   addChildButtonText: {
-    color: '#007AFF',
-    fontSize: 14,
+    color: '#8B5CF6',
+    fontSize: 12,
     fontWeight: '600',
+    letterSpacing: 0.1,
   },
 });
 

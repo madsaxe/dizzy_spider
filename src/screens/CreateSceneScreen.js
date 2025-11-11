@@ -1,15 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
   Alert,
   Image,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TextInput, Button, Text, Card, useTheme, SegmentedButtons } from 'react-native-paper';
 import { useApp } from '../context/AppContext';
 import TimeInput from '../components/TimeInput';
 import { validateScene } from '../utils/validation';
@@ -19,6 +18,8 @@ import imageService from '../services/imageService';
 const CreateSceneScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const { eventId } = route.params;
   const { createScene } = useApp();
   const [title, setTitle] = useState('');
@@ -31,6 +32,21 @@ const CreateSceneScreen = () => {
   const [loading, setLoading] = useState(false);
   const [isFictional, setIsFictional] = useState(false);
   const [imageUrl, setImageUrl] = useState(null);
+  const [imageSourceType, setImageSourceType] = useState('picker'); // 'picker' or 'url'
+  const [imageUrlInput, setImageUrlInput] = useState('');
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <Button
+          onPress={() => navigation.goBack()}
+          textColor={theme.colors.primary}
+        >
+          Cancel
+        </Button>
+      ),
+    });
+  }, [navigation, theme]);
 
   React.useEffect(() => {
     const loadData = async () => {
@@ -87,46 +103,52 @@ const CreateSceneScreen = () => {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.label}>Title *</Text>
+    <View style={styles.container}>
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 20) }]}
+      >
         <TextInput
-          style={styles.input}
+          label="Title *"
           value={title}
           onChangeText={setTitle}
-          placeholder="Enter scene title"
-          placeholderTextColor="#999"
+          mode="outlined"
+          style={styles.input}
         />
 
-        <Text style={styles.label}>Description</Text>
         <TextInput
-          style={[styles.input, styles.textArea]}
+          label="Description"
           value={description}
           onChangeText={setDescription}
-          placeholder="Enter scene description (optional)"
-          placeholderTextColor="#999"
+          mode="outlined"
           multiline
           numberOfLines={4}
+          style={styles.input}
         />
 
-        <TouchableOpacity
+        <SegmentedButtons
+          value={useRelativePosition ? 'relative' : 'time'}
+          onValueChange={(value) => setUseRelativePosition(value === 'relative')}
+          buttons={[
+            { value: 'time', label: 'Specific Time' },
+            { value: 'relative', label: 'Relative Position' },
+          ]}
           style={styles.toggleButton}
-          onPress={() => setUseRelativePosition(!useRelativePosition)}
-        >
-          <Text style={styles.toggleButtonText}>
-            {useRelativePosition ? 'Using Relative Position' : 'Using Specific Time'}
-          </Text>
-        </TouchableOpacity>
+        />
 
         {useRelativePosition ? (
           <View>
-            <Text style={styles.label}>Position Relative To *</Text>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
+              Position Relative To *
+            </Text>
             {availableScenes.length === 0 ? (
-              <Text style={styles.hint}>No other scenes in this event yet</Text>
+              <Text variant="bodySmall" style={styles.hint}>
+                No other scenes in this event yet
+              </Text>
             ) : (
               <>
                 {availableScenes.map((scene) => (
-                  <TouchableOpacity
+                  <Card
                     key={scene.id}
                     style={[
                       styles.sceneOption,
@@ -134,50 +156,28 @@ const CreateSceneScreen = () => {
                     ]}
                     onPress={() => setPositionRelativeTo(scene.id)}
                   >
-                    <Text
-                      style={[
-                        styles.sceneOptionText,
-                        positionRelativeTo === scene.id && styles.sceneOptionTextSelected,
-                      ]}
-                    >
-                      {scene.title}
-                    </Text>
-                  </TouchableOpacity>
+                    <Card.Content>
+                      <Text
+                        variant="bodyLarge"
+                        style={[
+                          styles.sceneOptionText,
+                          positionRelativeTo === scene.id && styles.sceneOptionTextSelected,
+                        ]}
+                      >
+                        {scene.title}
+                      </Text>
+                    </Card.Content>
+                  </Card>
                 ))}
-                <View style={styles.positionTypeContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.positionTypeButton,
-                      positionType === 'before' && styles.positionTypeButtonSelected,
-                    ]}
-                    onPress={() => setPositionType('before')}
-                  >
-                    <Text
-                      style={[
-                        styles.positionTypeText,
-                        positionType === 'before' && styles.positionTypeTextSelected,
-                      ]}
-                    >
-                      Before
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.positionTypeButton,
-                      positionType === 'after' && styles.positionTypeButtonSelected,
-                    ]}
-                    onPress={() => setPositionType('after')}
-                  >
-                    <Text
-                      style={[
-                        styles.positionTypeText,
-                        positionType === 'after' && styles.positionTypeTextSelected,
-                      ]}
-                    >
-                      After
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                <SegmentedButtons
+                  value={positionType}
+                  onValueChange={setPositionType}
+                  buttons={[
+                    { value: 'before', label: 'Before' },
+                    { value: 'after', label: 'After' },
+                  ]}
+                  style={styles.positionTypeContainer}
+                />
               </>
             )}
           </View>
@@ -192,150 +192,133 @@ const CreateSceneScreen = () => {
           />
         )}
 
-        <Text style={styles.label}>Hero Image (Optional)</Text>
+        <Text variant="titleMedium" style={styles.sectionTitle}>
+          Hero Image (Optional)
+        </Text>
+        
+        {!imageUrl && (
+          <SegmentedButtons
+            value={imageSourceType}
+            onValueChange={setImageSourceType}
+            buttons={[
+              { value: 'picker', label: 'Select Image' },
+              { value: 'url', label: 'Enter URL' },
+            ]}
+            style={styles.imageSourceToggle}
+          />
+        )}
+
         {imageUrl ? (
           <View style={styles.imageContainer}>
             <Image source={{ uri: imageUrl }} style={styles.previewImage} />
-            <TouchableOpacity
+            <Button
+              mode="outlined"
+              onPress={() => {
+                setImageUrl(null);
+                setImageUrlInput('');
+              }}
               style={styles.removeImageButton}
-              onPress={() => setImageUrl(null)}
+              textColor={theme.colors.error}
             >
-              <Text style={styles.removeImageText}>Remove Image</Text>
-            </TouchableOpacity>
+              Remove Image
+            </Button>
           </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.imagePickerButton}
+        ) : imageSourceType === 'picker' ? (
+          <Button
+            mode="outlined"
             onPress={async () => {
               const uri = await imageService.showImagePicker();
               if (uri) {
                 setImageUrl(uri);
               }
             }}
+            style={styles.imagePickerButton}
           >
-            <Text style={styles.imagePickerText}>Select Image</Text>
-          </TouchableOpacity>
+            Select Image
+          </Button>
+        ) : (
+          <View>
+            <TextInput
+              label="Image URL"
+              value={imageUrlInput}
+              onChangeText={setImageUrlInput}
+              mode="outlined"
+              placeholder="https://example.com/image.jpg"
+              style={styles.input}
+            />
+            <Button
+              mode="contained"
+              onPress={() => {
+                if (imageUrlInput.trim()) {
+                  setImageUrl(imageUrlInput.trim());
+                } else {
+                  Alert.alert('Error', 'Please enter a valid URL');
+                }
+              }}
+              style={styles.useUrlButton}
+            >
+              Use URL
+            </Button>
+          </View>
         )}
 
-        <TouchableOpacity
-          style={[styles.createButton, loading && styles.createButtonDisabled]}
+        <Button
+          mode="contained"
           onPress={handleCreate}
           disabled={loading}
+          loading={loading}
+          style={styles.createButton}
         >
-          <Text style={styles.createButtonText}>
-            {loading ? 'Creating...' : 'Create Scene'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          {loading ? 'Creating...' : 'Create Scene'}
+        </Button>
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+  },
+  scrollView: {
+    flex: 1,
   },
   content: {
     padding: 20,
   },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-    marginTop: 16,
-    color: '#333',
-  },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
+    marginBottom: 16,
   },
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
+  sectionTitle: {
+    marginTop: 8,
+    marginBottom: 8,
   },
   toggleButton: {
-    backgroundColor: '#007AFF',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 16,
+    marginTop: 8,
+    marginBottom: 16,
   },
-  toggleButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+  createButton: {
+    marginTop: 32,
   },
   sceneOption: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
     marginBottom: 8,
-    backgroundColor: '#fff',
   },
   sceneOptionSelected: {
-    borderColor: '#007AFF',
-    backgroundColor: '#e3f2fd',
+    borderWidth: 2,
   },
   sceneOptionText: {
-    fontSize: 16,
-    color: '#333',
+    color: '#E0E0E0',
   },
   sceneOptionTextSelected: {
-    color: '#007AFF',
+    color: '#8B5CF6',
     fontWeight: '600',
   },
   positionTypeContainer: {
-    flexDirection: 'row',
     marginTop: 12,
-    gap: 12,
-  },
-  positionTypeButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-  positionTypeButtonSelected: {
-    borderColor: '#007AFF',
-    backgroundColor: '#007AFF',
-  },
-  positionTypeText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  positionTypeTextSelected: {
-    color: '#fff',
-    fontWeight: '600',
   },
   hint: {
-    fontSize: 14,
-    color: '#999',
-    fontStyle: 'italic',
     marginTop: 8,
-  },
-  createButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 32,
-  },
-  createButtonDisabled: {
-    backgroundColor: '#ccc',
-  },
-  createButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
+    marginBottom: 12,
   },
   imageContainer: {
     marginVertical: 8,
@@ -345,32 +328,19 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 8,
     marginBottom: 8,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#0F0F1E',
+  },
+  imageSourceToggle: {
+    marginBottom: 16,
   },
   imagePickerButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderStyle: 'dashed',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    backgroundColor: '#fafafa',
+    marginTop: 8,
   },
-  imagePickerText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
+  useUrlButton: {
+    marginTop: 8,
   },
   removeImageButton: {
-    padding: 8,
-    backgroundColor: '#ffebee',
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  removeImageText: {
-    color: '#FF3B30',
-    fontSize: 14,
-    fontWeight: '600',
+    marginTop: 8,
   },
 });
 

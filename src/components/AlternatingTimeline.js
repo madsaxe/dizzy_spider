@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { useRef, useImperativeHandle, forwardRef } from 'react';
 import {
   View,
   ScrollView,
   StyleSheet,
   RefreshControl,
 } from 'react-native';
+import { Text } from 'react-native-paper';
 import TimelineItem from './TimelineItem';
 
-const AlternatingTimeline = ({
+const AlternatingTimeline = forwardRef(({
   data = [],
   onItemPress,
   onRefresh,
@@ -21,7 +22,23 @@ const AlternatingTimeline = ({
   fontSizes = { title: 16, description: 14, time: 12 },
   spacing = { item: 12 },
   footerComponent = null,
-}) => {
+  isFictional = false,
+}, ref) => {
+  const scrollViewRef = useRef(null);
+  const itemPositions = useRef({});
+
+  useImperativeHandle(ref, () => ({
+    scrollToItem: (itemId) => {
+      const position = itemPositions.current[itemId];
+      if (position !== undefined && scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({ y: position - 50, animated: true });
+      }
+    },
+  }));
+
+  const handleItemLayout = (itemId, y) => {
+    itemPositions.current[itemId] = y;
+  };
   const renderTimelineItem = (item, index) => {
     const side = index % 2 === 0 ? 'left' : 'right';
     const itemType = item._originalData?.type || item.type || 'default';
@@ -35,12 +52,18 @@ const AlternatingTimeline = ({
       return renderItem(item, index, side);
     }
 
+    // Debug: Log imageUrl if it exists
+    if (item.imageUrl && showImages) {
+      console.log('AlternatingTimeline passing imageUrl:', item.imageUrl, 'for item:', item.title || item.id);
+    }
+
     return (
       <TimelineItem
         key={item.id || index}
         item={{
           ...item,
           type: itemType,
+          imageUrl: item.imageUrl || item._originalData?.data?.imageUrl || null, // Explicitly ensure imageUrl is passed
         }}
         side={side}
         onPress={() => onItemPress && onItemPress(item, index)}
@@ -52,11 +75,205 @@ const AlternatingTimeline = ({
     );
   };
 
+  // Calculate time-based positioning for non-fictional timelines
+  const calculateTimeBasedPositions = () => {
+    if (isFictional || !data.length) return null;
+
+    // Helper to extract actual date from item (handles transformed data structure)
+    const getItemDate = (item) => {
+      // For eras, check startTime in the original data
+      if (item._originalData?.data?.startTime) {
+        const date = new Date(item._originalData.data.startTime);
+        if (!isNaN(date.getTime())) return date;
+      }
+      // For events/scenes, check time in the original data
+      if (item._originalData?.data?.time) {
+        const date = new Date(item._originalData.data.time);
+        if (!isNaN(date.getTime())) return date;
+      }
+      // Fall back to item.time if it's a valid date string (not a formatted display string)
+      if (item.time && item.time !== 'No time specified') {
+        // Check if it's a date string (YYYY-MM-DD format or ISO format)
+        const dateStr = item.time;
+        if (dateStr.match(/^\d{4}-\d{2}-\d{2}/) || dateStr.match(/^\d{4}-\d{2}-\d{2}T/)) {
+          const date = new Date(dateStr);
+          if (!isNaN(date.getTime())) return date;
+        }
+      }
+      return null;
+    };
+
+    // Get all valid dates from items
+    const validDates = data
+      .map(item => getItemDate(item))
+      .filter(Boolean);
+
+    if (validDates.length === 0) return null;
+
+    const minDate = new Date(Math.min(...validDates.map(d => d.getTime())));
+    const maxDate = new Date(Math.max(...validDates.map(d => d.getTime())));
+    const timeSpan = maxDate.getTime() - minDate.getTime();
+
+    if (timeSpan === 0) return null;
+
+    // Determine tick interval based on time span
+    let tickIntervalMs;
+    const years = (maxDate.getFullYear() - minDate.getFullYear()) || 1;
+    if (years > 50) {
+      tickIntervalMs = 365.25 * 24 * 60 * 60 * 1000 * 10; // 10 years
+    } else if (years > 10) {
+      tickIntervalMs = 365.25 * 24 * 60 * 60 * 1000; // 1 year
+    } else if (years > 1) {
+      tickIntervalMs = 365.25 * 24 * 60 * 60 * 1000 / 12; // 1 month
+    } else {
+      const days = timeSpan / (24 * 60 * 60 * 1000);
+      if (days > 30) {
+        tickIntervalMs = 24 * 60 * 60 * 1000 * 7; // 1 week
+      } else {
+        tickIntervalMs = 24 * 60 * 60 * 1000; // 1 day
+      }
+    }
+
+    // Generate tick marks
+    const ticks = [];
+    let currentTick = new Date(Math.floor(minDate.getTime() / tickIntervalMs) * tickIntervalMs);
+    while (currentTick <= maxDate) {
+      ticks.push(new Date(currentTick));
+      currentTick = new Date(currentTick.getTime() + tickIntervalMs);
+    }
+
+    // Calculate item positions based on time
+    let itemPositions = data.map(item => {
+      const date = getItemDate(item);
+      if (!date) return { item, yPosition: null, tickIndex: null };
+
+      // Find nearest tick
+      let nearestTickIndex = 0;
+      let minDistance = Math.abs(date.getTime() - ticks[0].getTime());
+      ticks.forEach((tick, index) => {
+        const distance = Math.abs(date.getTime() - tick.getTime());
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearestTickIndex = index;
+        }
+      });
+
+      return { item, tickIndex: nearestTickIndex, originalDate: date };
+    });
+
+    // Group items by tick index to handle overlaps
+    const itemsByTick = {};
+    itemPositions.forEach(pos => {
+      if (pos.tickIndex !== null) {
+        if (!itemsByTick[pos.tickIndex]) {
+          itemsByTick[pos.tickIndex] = [];
+        }
+        itemsByTick[pos.tickIndex].push(pos);
+      }
+    });
+
+    // Calculate Y positions with spacing to prevent overlaps
+    const tickSpacing = 150; // Space between ticks in pixels
+    const minItemSpacing = 120; // Minimum space between items at the same tick
+    const itemHeight = 100; // Estimated item height
+
+    itemPositions = itemPositions.map(pos => {
+      if (pos.tickIndex === null) return pos;
+
+      const itemsAtTick = itemsByTick[pos.tickIndex];
+      if (itemsAtTick.length === 1) {
+        // Single item at this tick - position at tick
+        pos.yPosition = pos.tickIndex * tickSpacing + 16;
+      } else {
+        // Multiple items at same tick - stack them vertically
+        const itemIndex = itemsAtTick.findIndex(p => p.item.id === pos.item.id);
+        pos.yPosition = pos.tickIndex * tickSpacing + 16 + (itemIndex * minItemSpacing);
+      }
+
+      return pos;
+    });
+
+    return {
+      ticks,
+      itemPositions,
+      tickSpacing: 150,
+      minDate,
+      maxDate,
+    };
+  };
+
+  const timeBasedData = calculateTimeBasedPositions();
+  
+  // Calculate tick marks - use time-based for non-fictional, evenly spaced for fictional
+  let tickMarks = [];
+  let contentHeight = 1000;
+  if (timeBasedData) {
+    // Track which ticks have nodes
+    const ticksWithNodes = new Set();
+    timeBasedData.itemPositions.forEach(pos => {
+      if (pos.tickIndex !== null && pos.tickIndex !== undefined) {
+        ticksWithNodes.add(pos.tickIndex);
+      }
+    });
+
+    // Use time-based ticks
+    tickMarks = timeBasedData.ticks.map((tick, index) => ({
+      y: index * timeBasedData.tickSpacing + 16,
+      date: tick,
+      hasNode: ticksWithNodes.has(index),
+    }));
+    
+    // Calculate content height based on the maximum Y position of any item
+    const maxYPosition = Math.max(
+      ...timeBasedData.itemPositions
+        .filter(pos => pos.yPosition !== null)
+        .map(pos => pos.yPosition),
+      tickMarks.length * timeBasedData.tickSpacing + 16
+    );
+    contentHeight = Math.max(maxYPosition + 200, 1000); // Add 200px padding at bottom
+  } else {
+    // Evenly spaced ticks for fictional timelines
+    const tickMarkSpacing = 100;
+    const estimatedHeight = Math.max(data.length * (100 + spacing.item), 1000);
+    const tickMarkCount = Math.floor(estimatedHeight / tickMarkSpacing);
+    tickMarks = Array.from({ length: tickMarkCount }).map((_, i) => ({
+      y: i * tickMarkSpacing + 16,
+      date: null,
+      hasNode: false,
+    }));
+    contentHeight = estimatedHeight;
+  }
+
+  // Format date for tick label
+  const formatTickLabel = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    const years = d.getFullYear();
+    const months = d.getMonth() + 1;
+    const days = d.getDate();
+    
+    // Determine format based on tick interval
+    if (timeBasedData) {
+      const yearsSpan = (timeBasedData.maxDate.getFullYear() - timeBasedData.minDate.getFullYear()) || 1;
+      if (yearsSpan > 50) {
+        return years.toString(); // Just year for long spans
+      } else if (yearsSpan > 10) {
+        return `${months}/${years}`; // Month/Year
+      } else if (yearsSpan > 1) {
+        return `${months}/${days}/${years}`; // Month/Day/Year
+      } else {
+        return `${months}/${days}`; // Month/Day for same year
+      }
+    }
+    return '';
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { minHeight: contentHeight }]}
         refreshControl={
           onRefresh ? (
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -66,13 +283,81 @@ const AlternatingTimeline = ({
         {/* Central Timeline Line */}
         <View style={[styles.timelineLine, { backgroundColor: lineColor, width: lineWidth }]} />
 
+        {/* Tick Marks */}
+        {tickMarks.map((tick, i) => (
+          <View key={`tick-${i}`}>
+            <View
+              style={[
+                styles.tickMark,
+                {
+                  top: tick.y,
+                  backgroundColor: lineColor,
+                  width: 12,
+                  height: 2,
+                },
+              ]}
+            />
+            {/* Label for ticks without nodes */}
+            {!tick.hasNode && tick.date && (
+              <View
+                style={[
+                  styles.tickLabel,
+                  {
+                    top: tick.y - 8,
+                  },
+                ]}
+              >
+                <Text variant="labelSmall" style={styles.tickLabelText}>
+                  {formatTickLabel(tick.date)}
+                </Text>
+              </View>
+            )}
+          </View>
+        ))}
+
         {/* Timeline Items */}
         <View style={styles.itemsContainer}>
-          {data.map((item, index) => (
-            <View key={item.id || index} style={[styles.itemRow, { marginBottom: spacing.item }]}>
-              {renderTimelineItem(item, index)}
-            </View>
-          ))}
+          {data.map((item, index) => {
+            const side = index % 2 === 0 ? 'left' : 'right';
+            const itemType = item._originalData?.type || item.type || 'default';
+            const itemColor = colors[itemType] || colors.default || lineColor;
+            
+            // Get time-based position if available
+            const timePosition = timeBasedData?.itemPositions.find(p => p.item.id === item.id);
+            // Only use absolute positioning if we have a valid position AND there are multiple items
+            // Otherwise use normal flow to ensure proper scrolling
+            const useAbsolutePosition = timePosition && 
+                                       timePosition.yPosition !== null && 
+                                       timeBasedData.itemPositions.length > 1;
+            const itemStyle = useAbsolutePosition
+              ? { position: 'absolute', top: timePosition.yPosition, left: 0, right: 0, marginBottom: spacing.item }
+              : { marginBottom: spacing.item };
+            
+            return (
+              <View 
+                key={item.id || index} 
+                onLayout={(event) => {
+                  if (item.id) {
+                    const { y } = event.nativeEvent.layout;
+                    handleItemLayout(item.id, y);
+                  }
+                }}
+                style={[styles.itemRow, itemStyle]}
+              >
+                {side === 'left' ? (
+                  <>
+                    {renderTimelineItem(item, index)}
+                    <View style={styles.spacer} />
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.spacer} />
+                    {renderTimelineItem(item, index)}
+                  </>
+                )}
+              </View>
+            );
+          })}
         </View>
         
         {/* Footer Component */}
@@ -84,19 +369,24 @@ const AlternatingTimeline = ({
       </ScrollView>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#1A1A2E',
   },
   scrollView: {
     flex: 1,
+    width: '100%',
   },
   scrollContent: {
-    paddingVertical: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 0,
     position: 'relative',
+    minHeight: '100%',
   },
   timelineLine: {
     position: 'absolute',
@@ -106,6 +396,26 @@ const styles = StyleSheet.create({
     marginLeft: -1.5, // Half of line width
     zIndex: 0,
   },
+  tickMark: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -6, // Center the tick mark
+    zIndex: 1,
+  },
+  tickLabel: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: 8, // Position label to the right of the tick
+    zIndex: 1,
+    backgroundColor: '#1A1A2E',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  tickLabelText: {
+    color: '#9CA3AF',
+    fontSize: 10,
+  },
   itemsContainer: {
     position: 'relative',
     zIndex: 1,
@@ -113,8 +423,13 @@ const styles = StyleSheet.create({
   itemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    minHeight: 120,
+    alignItems: 'center',
+    minHeight: 100,
+    paddingHorizontal: 16,
+    position: 'relative',
+  },
+  spacer: {
+    width: '45%',
   },
   footer: {
     padding: 16,

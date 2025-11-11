@@ -27,17 +27,46 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       initialProperties: nil
     )
 
-    if #available(iOS 13.0, *) {
-      rootView.backgroundColor = UIColor.systemBackground
-    } else {
-      rootView.backgroundColor = UIColor.white
-    }
+    // Set background color to match app theme
+    rootView.backgroundColor = UIColor(red: 0.1, green: 0.1, blue: 0.18, alpha: 1.0) // #1A1A2E
+    
+    // Ensure rootView fills entire screen
+    rootView.frame = UIScreen.main.bounds
+    rootView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
-    window = UIWindow(frame: UIScreen.main.bounds)
+    // Get the full screen bounds, accounting for safe areas
+    let screenBounds = UIScreen.main.bounds
+    
+    window = UIWindow(frame: screenBounds)
+    
+    // Ensure window uses full screen
+    if #available(iOS 13.0, *) {
+      if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+        window = UIWindow(windowScene: windowScene)
+        window?.frame = windowScene.coordinateSpace.bounds
+      }
+    }
+    
+    // Fallback to main bounds if window scene not available
+    if window?.frame == .zero {
+      window?.frame = screenBounds
+    }
+    
     let rootViewController = UIViewController()
+    
+    // Ensure rootViewController view fills entire screen
     rootViewController.view = rootView
+    rootViewController.view.backgroundColor = UIColor(red: 0.1, green: 0.1, blue: 0.18, alpha: 1.0)
+    rootViewController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    
+    // Ensure window fills entire screen
+    window?.backgroundColor = UIColor(red: 0.1, green: 0.1, blue: 0.18, alpha: 1.0)
     window?.rootViewController = rootViewController
     window?.makeKeyAndVisible()
+    
+    // Force layout update
+    window?.layoutIfNeeded()
+    
     return true
   }
 }

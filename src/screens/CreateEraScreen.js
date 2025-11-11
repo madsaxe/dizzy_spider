@@ -1,15 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
   Alert,
   Image,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TextInput, Button, Text, Card, useTheme, SegmentedButtons } from 'react-native-paper';
 import { useApp } from '../context/AppContext';
 import TimeInput from '../components/TimeInput';
 import { validateEra } from '../utils/validation';
@@ -19,6 +18,8 @@ import imageService from '../services/imageService';
 const CreateEraScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const { timelineId } = route.params;
   const { createEra } = useApp();
   const [title, setTitle] = useState('');
@@ -30,6 +31,21 @@ const CreateEraScreen = () => {
   const [existingEras, setExistingEras] = useState([]);
   const [positionRelativeTo, setPositionRelativeTo] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
+  const [imageSourceType, setImageSourceType] = useState('picker'); // 'picker' or 'url'
+  const [imageUrlInput, setImageUrlInput] = useState('');
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <Button
+          onPress={() => navigation.goBack()}
+          textColor={theme.colors.primary}
+        >
+          Cancel
+        </Button>
+      ),
+    });
+  }, [navigation, theme]);
 
   React.useEffect(() => {
     const loadData = async () => {
@@ -95,36 +111,39 @@ const CreateEraScreen = () => {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.label}>Title *</Text>
+    <View style={styles.container}>
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 20) }]}
+      >
         <TextInput
-          style={styles.input}
+          label="Title *"
           value={title}
           onChangeText={setTitle}
-          placeholder="Enter era title"
-          placeholderTextColor="#999"
+          mode="outlined"
+          style={styles.input}
         />
 
-        <Text style={styles.label}>Description</Text>
         <TextInput
-          style={[styles.input, styles.textArea]}
+          label="Description"
           value={description}
           onChangeText={setDescription}
-          placeholder="Enter era description (optional)"
-          placeholderTextColor="#999"
+          mode="outlined"
           multiline
           numberOfLines={4}
+          style={styles.input}
         />
 
         {isFictional && existingEras.length > 0 && (
           <View>
-            <Text style={styles.label}>Position After Era (Optional)</Text>
-            <Text style={styles.hint}>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
+              Position After Era (Optional)
+            </Text>
+            <Text variant="bodySmall" style={styles.hint}>
               Select an era to position this era after it, or leave blank and specify custom times below.
             </Text>
             {existingEras.map((era) => (
-              <TouchableOpacity
+              <Card
                 key={era.id}
                 style={[
                   styles.eraOption,
@@ -132,15 +151,18 @@ const CreateEraScreen = () => {
                 ]}
                 onPress={() => setPositionRelativeTo(era.id === positionRelativeTo ? null : era.id)}
               >
-                <Text
-                  style={[
-                    styles.eraOptionText,
-                    positionRelativeTo === era.id && styles.eraOptionTextSelected,
-                  ]}
-                >
-                  {era.title}
-                </Text>
-              </TouchableOpacity>
+                <Card.Content>
+                  <Text
+                    variant="bodyLarge"
+                    style={[
+                      styles.eraOptionText,
+                      positionRelativeTo === era.id && styles.eraOptionTextSelected,
+                    ]}
+                  >
+                    {era.title}
+                  </Text>
+                </Card.Content>
+              </Card>
             ))}
           </View>
         )}
@@ -155,112 +177,126 @@ const CreateEraScreen = () => {
           onEndTimeChange={setEndTime}
         />
 
-        <Text style={styles.label}>Hero Image (Optional)</Text>
+        <Text variant="titleMedium" style={styles.sectionTitle}>
+          Hero Image (Optional)
+        </Text>
+        
+        {!imageUrl && (
+          <SegmentedButtons
+            value={imageSourceType}
+            onValueChange={setImageSourceType}
+            buttons={[
+              { value: 'picker', label: 'Select Image' },
+              { value: 'url', label: 'Enter URL' },
+            ]}
+            style={styles.imageSourceToggle}
+          />
+        )}
+
         {imageUrl ? (
           <View style={styles.imageContainer}>
             <Image source={{ uri: imageUrl }} style={styles.previewImage} />
-            <TouchableOpacity
+            <Button
+              mode="outlined"
+              onPress={() => {
+                setImageUrl(null);
+                setImageUrlInput('');
+              }}
               style={styles.removeImageButton}
-              onPress={() => setImageUrl(null)}
+              textColor={theme.colors.error}
             >
-              <Text style={styles.removeImageText}>Remove Image</Text>
-            </TouchableOpacity>
+              Remove Image
+            </Button>
           </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.imagePickerButton}
+        ) : imageSourceType === 'picker' ? (
+          <Button
+            mode="outlined"
             onPress={async () => {
               const uri = await imageService.showImagePicker();
               if (uri) {
                 setImageUrl(uri);
               }
             }}
+            style={styles.imagePickerButton}
           >
-            <Text style={styles.imagePickerText}>Select Image</Text>
-          </TouchableOpacity>
+            Select Image
+          </Button>
+        ) : (
+          <View>
+            <TextInput
+              label="Image URL"
+              value={imageUrlInput}
+              onChangeText={setImageUrlInput}
+              mode="outlined"
+              placeholder="https://example.com/image.jpg"
+              style={styles.input}
+            />
+            <Button
+              mode="contained"
+              onPress={() => {
+                if (imageUrlInput.trim()) {
+                  setImageUrl(imageUrlInput.trim());
+                } else {
+                  Alert.alert('Error', 'Please enter a valid URL');
+                }
+              }}
+              style={styles.useUrlButton}
+            >
+              Use URL
+            </Button>
+          </View>
         )}
 
-        <TouchableOpacity
-          style={[styles.createButton, loading && styles.createButtonDisabled]}
+        <Button
+          mode="contained"
           onPress={handleCreate}
           disabled={loading}
+          loading={loading}
+          style={styles.createButton}
         >
-          <Text style={styles.createButtonText}>
-            {loading ? 'Creating...' : 'Create Era'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          {loading ? 'Creating...' : 'Create Era'}
+        </Button>
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+  },
+  scrollView: {
+    flex: 1,
   },
   content: {
     padding: 20,
   },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-    marginTop: 16,
-    color: '#333',
-  },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
+    marginBottom: 16,
   },
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
+  sectionTitle: {
+    marginTop: 8,
+    marginBottom: 8,
   },
   createButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
     marginTop: 32,
   },
-  createButtonDisabled: {
-    backgroundColor: '#ccc',
-  },
-  createButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
   eraOption: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
     marginBottom: 8,
-    backgroundColor: '#fff',
   },
   eraOptionSelected: {
-    borderColor: '#007AFF',
-    backgroundColor: '#e3f2fd',
+    borderWidth: 2,
   },
   eraOptionText: {
-    fontSize: 16,
-    color: '#333',
+    color: '#E0E0E0',
   },
   eraOptionTextSelected: {
-    color: '#007AFF',
+    color: '#8B5CF6',
     fontWeight: '600',
   },
   hint: {
-    fontSize: 14,
-    color: '#999',
-    fontStyle: 'italic',
     marginTop: 8,
+    marginBottom: 12,
   },
   imageContainer: {
     marginVertical: 8,
@@ -270,32 +306,19 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 8,
     marginBottom: 8,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#0F0F1E',
+  },
+  imageSourceToggle: {
+    marginBottom: 16,
   },
   imagePickerButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderStyle: 'dashed',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    backgroundColor: '#fafafa',
+    marginTop: 8,
   },
-  imagePickerText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
+  useUrlButton: {
+    marginTop: 8,
   },
   removeImageButton: {
-    padding: 8,
-    backgroundColor: '#ffebee',
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  removeImageText: {
-    color: '#FF3B30',
-    fontSize: 14,
-    fontWeight: '600',
+    marginTop: 8,
   },
 });
 
