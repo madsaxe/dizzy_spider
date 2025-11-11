@@ -18,6 +18,8 @@ const TimeInput = ({
   onEndTimeChange,
   startValue,
   endValue,
+  showTimeOfDay = false, // For scenes in historical timelines - show time picker
+  defaultValue = null, // Default date value (e.g., parent event's date)
 }) => {
   const theme = useTheme();
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -99,9 +101,23 @@ const TimeInput = ({
 
   const handleDateChange = (date) => {
     if (mode === 'single') {
-      // Set time to midnight for date-only
-      const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      onChange(dateOnly.toISOString());
+      if (showTimeOfDay) {
+        // For scenes with time of day, preserve the time portion
+        const currentDate = value ? new Date(value) : (defaultValue ? new Date(defaultValue) : new Date());
+        const newDate = new Date(
+          date.getFullYear(),
+          date.getMonth(),
+          date.getDate(),
+          currentDate.getHours(),
+          currentDate.getMinutes(),
+          currentDate.getSeconds()
+        );
+        onChange(newDate.toISOString());
+      } else {
+        // Set time to midnight for date-only
+        const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        onChange(dateOnly.toISOString());
+      }
       setShowDatePicker(false);
     }
   };
@@ -417,14 +433,16 @@ const TimeInput = ({
             style={styles.dateButton}
           >
             {value
-              ? new Date(value).toLocaleDateString()
+              ? showTimeOfDay
+                ? new Date(value).toLocaleString()
+                : new Date(value).toLocaleDateString()
               : 'Select date'}
           </Button>
           <DatePicker
             modal
             open={showDatePicker}
-            date={value ? new Date(value) : new Date()}
-            mode="date"
+            date={value ? new Date(value) : (defaultValue ? new Date(defaultValue) : new Date())}
+            mode={showTimeOfDay ? "datetime" : "date"}
             onConfirm={handleDateChange}
             onCancel={() => setShowDatePicker(false)}
           />

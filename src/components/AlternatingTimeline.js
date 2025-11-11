@@ -4,13 +4,16 @@ import {
   ScrollView,
   StyleSheet,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { Text } from 'react-native-paper';
+import Svg, { Line, Rect, Text as SvgText } from 'react-native-svg';
 import TimelineItem from './TimelineItem';
 
 const AlternatingTimeline = forwardRef(({
   data = [],
   onItemPress,
+  onItemEdit,
   onRefresh,
   refreshing = false,
   lineColor = '#007AFF',
@@ -23,6 +26,7 @@ const AlternatingTimeline = forwardRef(({
   spacing = { item: 12 },
   footerComponent = null,
   isFictional = false,
+  zoomScale = 1.0,
 }, ref) => {
   const scrollViewRef = useRef(null);
   const itemPositions = useRef({});
@@ -67,10 +71,12 @@ const AlternatingTimeline = forwardRef(({
         }}
         side={side}
         onPress={() => onItemPress && onItemPress(item, index)}
+        onEdit={onItemEdit ? () => onItemEdit(item) : undefined}
         colors={itemColors}
         symbol={symbol}
         showImage={showImages}
         fontSizes={fontSizes}
+        zoomScale={zoomScale}
       />
     );
   };
@@ -196,13 +202,17 @@ const AlternatingTimeline = forwardRef(({
     return {
       ticks,
       itemPositions,
-      tickSpacing: 150,
+      tickSpacing: 150 * zoomScale, // Scale tick spacing based on zoom (smaller = closer ticks)
       minDate,
       maxDate,
     };
   };
 
   const timeBasedData = calculateTimeBasedPositions();
+  
+  // Get screen width for SVG positioning
+  const screenWidth = Dimensions.get('window').width;
+  const centerX = screenWidth / 2;
   
   // Calculate tick marks - use time-based for non-fictional, evenly spaced for fictional
   let tickMarks = [];
@@ -216,25 +226,25 @@ const AlternatingTimeline = forwardRef(({
       }
     });
 
-    // Use time-based ticks
+    // Use time-based ticks - scale positions by zoom scale
     tickMarks = timeBasedData.ticks.map((tick, index) => ({
-      y: index * timeBasedData.tickSpacing + 16,
+      y: (index * timeBasedData.tickSpacing + 16) * zoomScale,
       date: tick,
       hasNode: ticksWithNodes.has(index),
     }));
     
-    // Calculate content height based on the maximum Y position of any item
+    // Calculate content height based on the maximum Y position of any item - scale by zoom
     const maxYPosition = Math.max(
       ...timeBasedData.itemPositions
         .filter(pos => pos.yPosition !== null)
-        .map(pos => pos.yPosition),
-      tickMarks.length * timeBasedData.tickSpacing + 16
+        .map(pos => pos.yPosition * zoomScale),
+      tickMarks.length > 0 ? tickMarks[tickMarks.length - 1].y + 16 : 0
     );
-    contentHeight = Math.max(maxYPosition + 200, 1000); // Add 200px padding at bottom
+    contentHeight = Math.max(maxYPosition + 200 * zoomScale, 1000); // Add scaled padding at bottom
   } else {
     // Evenly spaced ticks for fictional timelines
-    const tickMarkSpacing = 100;
-    const estimatedHeight = Math.max(data.length * (100 + spacing.item), 1000);
+    const tickMarkSpacing = 100 * zoomScale; // Scale tick spacing based on zoom
+    const estimatedHeight = Math.max(data.length * (100 + spacing.item) * zoomScale, 1000);
     const tickMarkCount = Math.floor(estimatedHeight / tickMarkSpacing);
     tickMarks = Array.from({ length: tickMarkCount }).map((_, i) => ({
       y: i * tickMarkSpacing + 16,
@@ -280,40 +290,47 @@ const AlternatingTimeline = forwardRef(({
           ) : undefined
         }
       >
-        {/* Central Timeline Line */}
-        <View style={[styles.timelineLine, { backgroundColor: lineColor, width: lineWidth }]} />
+        {/* SVG Container for Timeline Line, Ticks, and Labels */}
+        <Svg
+          style={styles.svgContainer}
+          width={screenWidth}
+          height={contentHeight}
+        >
+          {/* Central Timeline Line - Start at top of scroll content to go through all nodes */}
+          <Line
+            x1={centerX}
+            y1={0}
+            x2={centerX}
+            y2={contentHeight}
+            stroke={lineColor}
+            strokeWidth={lineWidth}
+          />
 
-        {/* Tick Marks */}
-        {tickMarks.map((tick, i) => (
-          <View key={`tick-${i}`}>
-            <View
-              style={[
-                styles.tickMark,
-                {
-                  top: tick.y,
-                  backgroundColor: lineColor,
-                  width: 12,
-                  height: 2,
-                },
-              ]}
-            />
-            {/* Label for ticks without nodes */}
-            {!tick.hasNode && tick.date && (
-              <View
-                style={[
-                  styles.tickLabel,
-                  {
-                    top: tick.y - 8,
-                  },
-                ]}
-              >
-                <Text variant="labelSmall" style={styles.tickLabelText}>
+          {/* Tick Marks - Match timeline color */}
+          {tickMarks.map((tick, i) => (
+            <React.Fragment key={`tick-${i}`}>
+              <Rect
+                x={centerX - 6}
+                y={tick.y}
+                width={12}
+                height={2}
+                fill={lineColor} // Same color as timeline line
+              />
+              {/* Label for ticks without nodes */}
+              {!tick.hasNode && tick.date && (
+                <SvgText
+                  x={centerX + 8}
+                  y={tick.y + 4}
+                  fontSize={10}
+                  fill="#9CA3AF"
+                  fontFamily="System"
+                >
                   {formatTickLabel(tick.date)}
-                </Text>
-              </View>
-            )}
-          </View>
-        ))}
+                </SvgText>
+              )}
+            </React.Fragment>
+          ))}
+        </Svg>
 
         {/* Timeline Items */}
         <View style={styles.itemsContainer}>
@@ -324,14 +341,11 @@ const AlternatingTimeline = forwardRef(({
             
             // Get time-based position if available
             const timePosition = timeBasedData?.itemPositions.find(p => p.item.id === item.id);
-            // Only use absolute positioning if we have a valid position AND there are multiple items
-            // Otherwise use normal flow to ensure proper scrolling
-            const useAbsolutePosition = timePosition && 
-                                       timePosition.yPosition !== null && 
-                                       timeBasedData.itemPositions.length > 1;
-            const itemStyle = useAbsolutePosition
-              ? { position: 'absolute', top: timePosition.yPosition, left: 0, right: 0, marginBottom: spacing.item }
-              : { marginBottom: spacing.item };
+            // TimelineItem uses absolute positioning relative to viewport
+            // Scale the Y position based on zoom scale
+            const itemStyle = timePosition && timePosition.yPosition !== null
+              ? { top: timePosition.yPosition * zoomScale, height: 0 } // Scale Y position and height: 0 to collapse container
+              : { marginBottom: spacing.item * zoomScale };
             
             return (
               <View 
@@ -344,17 +358,7 @@ const AlternatingTimeline = forwardRef(({
                 }}
                 style={[styles.itemRow, itemStyle]}
               >
-                {side === 'left' ? (
-                  <>
-                    {renderTimelineItem(item, index)}
-                    <View style={styles.spacer} />
-                  </>
-                ) : (
-                  <>
-                    <View style={styles.spacer} />
-                    {renderTimelineItem(item, index)}
-                  </>
-                )}
+                {renderTimelineItem(item, index)}
               </View>
             );
           })}
@@ -388,48 +392,18 @@ const styles = StyleSheet.create({
     position: 'relative',
     minHeight: '100%',
   },
-  timelineLine: {
+  svgContainer: {
     position: 'absolute',
-    left: '50%',
     top: 0,
-    bottom: 0,
-    marginLeft: -1.5, // Half of line width
-    zIndex: 0,
-  },
-  tickMark: {
-    position: 'absolute',
-    left: '50%',
-    marginLeft: -6, // Center the tick mark
-    zIndex: 1,
-  },
-  tickLabel: {
-    position: 'absolute',
-    left: '50%',
-    marginLeft: 8, // Position label to the right of the tick
-    zIndex: 1,
-    backgroundColor: '#1A1A2E',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  tickLabelText: {
-    color: '#9CA3AF',
-    fontSize: 10,
+    left: 0,
+    zIndex: 0, // Back at bottom, below nodes
   },
   itemsContainer: {
     position: 'relative',
     zIndex: 1,
   },
   itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    minHeight: 100,
-    paddingHorizontal: 16,
-    position: 'relative',
-  },
-  spacer: {
-    width: '45%',
+    paddingHorizontal: 0,
   },
   footer: {
     padding: 16,

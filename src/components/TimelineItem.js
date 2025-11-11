@@ -2,22 +2,25 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   StyleSheet,
-  ImageBackground,
   Dimensions,
+  Image,
 } from 'react-native';
 import { Icon } from 'react-native-paper';
+import Svg, { Polygon, Rect, Path, Image as SvgImage, Defs, Pattern, ClipPath, Mask } from 'react-native-svg';
+import { getLocalImage, hasLocalImage } from '../assets/images';
 
 const TimelineItem = ({
   item,
   side = 'left', // 'left' or 'right'
   onPress,
+  onEdit,
   colors = {},
   symbol = null,
   showImage = true,
   fontSizes = { title: 16, description: 14, time: 12 },
+  zoomScale = 1.0,
 }) => {
   const {
     title,
@@ -29,156 +32,342 @@ const TimelineItem = ({
 
   const itemColor = colors[type] || colors.default || '#007AFF';
   const isLeft = side === 'left';
-  const [nodeHeight, setNodeHeight] = useState(100); // Default to minHeight
+  const screenHeight = Dimensions.get('window').height;
+  const nodeHeightValue = screenHeight * 0.15 * zoomScale; // 15% of screen height, scaled by zoom
+  const [nodeHeight, setNodeHeight] = useState(nodeHeightValue);
   
   // Calculate triangle border widths to match node height
   // For border-based triangles: triangle height = borderTopWidth + borderBottomWidth
-  // We want 1.5px border width, so:
+  // We want 1.5px border width, matching the node border
   const borderWidth = 1.5;
-  // Triangle depth should reach the central timeline
-  // Nodes are 45% width, so gap to center is approximately 5% of screen width
-  // Calculate dynamically based on screen width to ensure triangle reaches center
   const screenWidth = Dimensions.get('window').width;
-  const nodeWidth = screenWidth * 0.45; // 45% of screen
-  const gapToCenter = (screenWidth / 2) - nodeWidth; // Distance from node edge to center
-  const triangleDepth = Math.max(60, gapToCenter + 10); // Ensure triangle reaches center with small buffer
-  // Triangle height should match node height
-  // Outer triangle (with border): slightly larger
-  const outerTriangleTop = (nodeHeight / 2) + borderWidth;
-  const outerTriangleBottom = (nodeHeight / 2) + borderWidth;
-  const outerTriangleDepth = triangleDepth + borderWidth;
-  // Inner triangle (fill): matches node height
-  const innerTriangleTop = nodeHeight / 2;
-  const innerTriangleBottom = nodeHeight / 2;
-  const innerTriangleDepth = triangleDepth;
+  const centerX = screenWidth / 2;
   
-  // Use imageUrl directly - React Native handles URL encoding automatically
-  // Only log errors, not successful loads to reduce console noise
+  // Calculate dimensions: total width (node + triangle) = 49% of screen
+  const totalNodeWidth = screenWidth * 0.49;
+  const triangleDepth = screenWidth * 0.04; // 4% of screen
+  const nodeWidth = totalNodeWidth - triangleDepth; // Rectangle width = total - triangle
+  
+  // Position nodes so triangle tip touches center line
+  // Path coordinates are offset by borderOffset (borderWidth/2) to center the border stroke
+  // For left nodes: triangle tip in SVG is at x = borderOffset + totalNodeWidth
+  //   Container left = centerX - (borderOffset + totalNodeWidth) = centerX - totalNodeWidth - borderOffset
+  // For right nodes: triangle tip in SVG is at x = borderOffset
+  //   Container left = centerX - borderOffset
+  const borderOffset = borderWidth / 2;
+  const leftNodeX = centerX - totalNodeWidth - borderOffset;
+  const rightNodeX = centerX - borderOffset;
+  
+  // Triangle height should match node height
+  // Using CSS-style border technique: width: 0, height: 0, with borders forming the triangle
+  
+  // Determine image source - handle both local assets and remote URLs
+  const getImageSource = () => {
+    if (!imageUrl) return null;
+    
+    // Check if it's a local image key
+    if (hasLocalImage(imageUrl)) {
+      const localImage = getLocalImage(imageUrl);
+      if (__DEV__) {
+        console.log(`[TimelineItem] Using local image: ${imageUrl}`, localImage);
+        console.log(`[TimelineItem] Local image type:`, typeof localImage, localImage);
+      }
+      // For local images, require() returns a number (asset ID) or object
+      // React Native ImageBackground expects the require() result directly
+      // Return the require() result directly, just like the test image
+      return localImage;
+    }
+    
+    // Otherwise treat as remote URL
+    if (__DEV__) {
+      console.log(`[TimelineItem] Using remote image URL: ${imageUrl}`);
+    }
+    return { uri: imageUrl.trim() };
+  };
+
+  const imageSource = getImageSource();
+  
+  // Debug: Log the final image source
+  if (__DEV__ && imageSource) {
+    console.log(`[TimelineItem] Final imageSource for ${imageUrl}:`, imageSource);
+  }
+
+  // Calculate node dimensions
+  const borderRadius = 14;
+  
+  // Generate stable IDs for SVG patterns and clip paths
+  const patternId = `imagePattern-${item.id || 'default'}`;
+  const clipId = `clip-${item.id || 'default'}`;
+  
+  // Calculate combined path for node + triangle
+  // SVG container width = nodeWidth + triangleDepth + borderWidth (to accommodate border stroke)
+  // Path coordinates need to be offset by borderWidth/2 to center the border stroke
+  // For left nodes: rectangle at x=borderWidth/2, triangle extends from x=nodeWidth+borderWidth/2, pointing right (toward center)
+  // For right nodes: triangle at x=borderWidth/2 pointing left (toward center), rectangle at x=triangleDepth+borderWidth/2
+  const nodeX = isLeft ? borderOffset : triangleDepth + borderOffset; // Left nodes start at borderOffset, right nodes start after triangle + borderOffset
+  const nodeY = borderOffset;
+  
+  // Create a path that combines the rounded rectangle and triangle
+  // Path format: M (move to), L (line to), A (arc for rounded corners), Z (close path)
+  // Note: No rounded corners on the side where triangle connects
+  const createCombinedPath = () => {
+    if (isLeft) {
+      // Left node: rectangle on left, triangle on right edge pointing right (toward center)
+      // Start at top-left of rectangle (accounting for border radius)
+      const path = `M ${nodeX + borderRadius},${nodeY} `;
+      // Top edge of rectangle
+      const topEdge = `L ${nodeX + nodeWidth},${nodeY} `;
+      // No rounded corner on right side - go directly to triangle
+      // Triangle: from top-right of rectangle to triangle tip to bottom-right of rectangle
+      const triangleTipX = nodeX + nodeWidth + triangleDepth;
+      const triangleTipY = nodeHeightValue / 2 + borderOffset;
+      const triangle = `L ${triangleTipX},${triangleTipY} L ${nodeX + nodeWidth},${nodeHeightValue + borderOffset} `;
+      // Bottom edge of rectangle (no rounded corner on right side)
+      const bottomEdge = `L ${nodeX + borderRadius},${nodeHeightValue + borderOffset} `;
+      // Bottom-left rounded corner
+      const bottomLeftCorner = `A ${borderRadius} ${borderRadius} 0 0 1 ${nodeX},${nodeHeightValue - borderRadius} `;
+      // Left edge back to start
+      const leftEdge = `L ${nodeX},${nodeY + borderRadius} A ${borderRadius} ${borderRadius} 0 0 1 ${nodeX + borderRadius},${nodeY} Z`;
+      return path + topEdge + triangle + bottomEdge + bottomLeftCorner + leftEdge;
+    } else {
+      // Right node: triangle on left edge pointing left (toward center), rectangle on right
+      // Start at triangle tip (pointing left toward center) - offset by borderOffset
+      const triangleTipX = borderOffset;
+      const triangleTipY = nodeHeightValue / 2 + borderOffset;
+      const path = `M ${triangleTipX},${triangleTipY} `;
+      // Triangle: from tip to top-left of rectangle
+      const triangleTop = `L ${nodeX},${nodeY} `;
+      // Top edge of rectangle (no rounded corner on left side where triangle connects)
+      const topEdge = `L ${nodeX + nodeWidth - borderRadius},${nodeY} `;
+      // Top-right rounded corner
+      const topRightCorner = `A ${borderRadius} ${borderRadius} 0 0 1 ${nodeX + nodeWidth},${nodeY + borderRadius} `;
+      // Right edge of rectangle
+      const rightEdge = `L ${nodeX + nodeWidth},${nodeHeightValue - borderRadius + borderOffset} `;
+      // Bottom-right rounded corner
+      const bottomRightCorner = `A ${borderRadius} ${borderRadius} 0 0 1 ${nodeX + nodeWidth - borderRadius},${nodeHeightValue + borderOffset} `;
+      // Bottom edge of rectangle (no rounded corner on left side where triangle connects)
+      const bottomEdge = `L ${nodeX},${nodeHeightValue + borderOffset} `;
+      // Triangle: from bottom-left of rectangle back to tip
+      const triangleBottom = `L ${triangleTipX},${triangleTipY} Z`;
+      return path + triangleTop + topEdge + topRightCorner + rightEdge + bottomRightCorner + bottomEdge + triangleBottom;
+    }
+  };
+  
+  const combinedPath = createCombinedPath();
 
   return (
     <View style={[
       styles.container,
-      isLeft ? styles.leftContainer : styles.rightContainer,
+      styles.absoluteContainer,
+      {
+        left: isLeft ? leftNodeX : rightNodeX,
+      },
     ]}>
-      {/* Triangle Shape - Separate from node */}
-      {!isLeft && (
-        <View style={[
-          styles.triangleRight, 
-          { 
-            borderRightColor: itemColor, 
-            borderTopColor: 'transparent',
-            borderBottomColor: 'transparent',
-            borderTopWidth: innerTriangleTop,
-            borderBottomWidth: innerTriangleBottom,
-            borderRightWidth: innerTriangleDepth,
-          }
-        ]} />
-      )}
-      
-      {/* Node Rectangle */}
       <TouchableOpacity
-        style={styles.nodeWrapper}
+        style={styles.touchableWrapper}
         onPress={onPress}
         activeOpacity={0.7}
+        onLayout={(event) => {
+          const { height } = event.nativeEvent.layout;
+          if (height > 0) {
+            setNodeHeight(height);
+          }
+        }}
       >
-      {showImage && imageUrl ? (
-        <ImageBackground
-          source={{ uri: imageUrl.trim() }}
-          style={[
-            styles.content,
-            styles.contentWithImage,
-            { borderColor: itemColor },
-            isLeft ? styles.leftContent : styles.rightContent,
-          ]}
-          resizeMode="cover"
-          imageStyle={[styles.backgroundImageStyle, { width: '100%', height: '100%' }]}
-          onLayout={(event) => {
-            const { height } = event.nativeEvent.layout;
-            if (height > 0) {
-              setNodeHeight(height);
-            }
-          }}
-          onError={(error) => {
-            // Silently fail - image URLs may not exist, that's okay
-            // Only log in development if needed
-            if (__DEV__) {
-              const errorInfo = error.nativeEvent || error;
-              if (errorInfo?.responseCode === 404) {
-                // 404 means image doesn't exist - this is expected for some seed data URLs
-                // Don't log to reduce console noise
-              }
-            }
-          }}
-          onLoad={() => {
-            // Image loaded successfully - no need to log
-          }}
-          onLoadStart={() => {
-            // Image loading started - no need to log
-          }}
+        {/* SVG Container for Node and Triangle */}
+        {/* Add borderWidth to width to ensure border stroke is not clipped */}
+        <Svg
+          width={totalNodeWidth + borderWidth}
+          height={nodeHeightValue + borderWidth}
+          style={styles.svgContainer}
         >
-          {/* Color Overlay */}
-          <View style={[styles.colorOverlay, { backgroundColor: itemColor }]} />
-          
-          {/* Content on top of overlay */}
-          <View style={styles.contentOverlay}>
-            {/* Symbol/Icon */}
-            {symbol && (
-              <View style={[styles.symbolContainer, { backgroundColor: itemColor }]}>
-                {type === 'era' ? (
-                  <Icon
-                    source="chart-timeline"
-                    size={16}
-                    color="#1A1A2E"
-                  />
-                ) : type === 'event' ? (
-                  <Icon
-                    source="timeline-outline"
-                    size={16}
-                    color="#1A1A2E"
-                  />
-                ) : type === 'scene' ? (
-                  <Icon
-                    source="star-box-outline"
-                    size={16}
-                    color="#1A1A2E"
-                  />
-                ) : (
-                  <Text style={styles.symbol}>{symbol}</Text>
-                )}
-              </View>
+          <Defs>
+            {/* Background Image Pattern - Full rectangular area */}
+            {showImage && imageSource && typeof imageSource === 'object' && imageSource.uri && (
+              <Pattern
+                id={patternId}
+                patternUnits="userSpaceOnUse"
+                width={totalNodeWidth}
+                height={nodeHeightValue}
+                x={0}
+                y={0}
+              >
+                <SvgImage
+                  href={imageSource.uri}
+                  width={totalNodeWidth}
+                  height={nodeHeightValue}
+                  preserveAspectRatio="xMidYMid slice"
+                />
+              </Pattern>
             )}
+          </Defs>
 
-            {/* Content */}
-            <View style={styles.textContainer}>
-              {time && (
-                <Text style={[styles.time, { color: itemColor, fontSize: fontSizes.time }]}>{time}</Text>
+          {/* Full rectangular background with image pattern */}
+          {showImage && imageSource && typeof imageSource === 'object' && imageSource.uri ? (
+            <>
+              {/* Background image as full rectangle - covers entire area including border */}
+              <Rect
+                x={0}
+                y={0}
+                width={totalNodeWidth + borderWidth}
+                height={nodeHeightValue + borderWidth}
+                fill={`url(#${patternId})`}
+              />
+              {/* Color overlay on image */}
+              <Rect
+                x={0}
+                y={0}
+                width={totalNodeWidth + borderWidth}
+                height={nodeHeightValue + borderWidth}
+                fill="#1A1A2E"
+                opacity={0.5}
+              />
+              {/* Clipping triangles on triangle side to mask image - account for border offset */}
+              {isLeft ? (
+                // Left node: triangle on right side, clip above and below triangle
+                <>
+                  {/* Top clipping triangle (right triangle above the node triangle) */}
+                  <Polygon
+                    points={`${nodeWidth + borderOffset},${borderOffset} ${totalNodeWidth + borderWidth},${borderOffset} ${totalNodeWidth + borderWidth},${nodeHeightValue / 2 + borderOffset}`}
+                    fill="#1A1A2E"
+                  />
+                  {/* Bottom clipping triangle (right triangle below the node triangle) */}
+                  <Polygon
+                    points={`${nodeWidth + borderOffset},${nodeHeightValue + borderOffset} ${totalNodeWidth + borderWidth},${nodeHeightValue + borderOffset} ${totalNodeWidth + borderWidth},${nodeHeightValue / 2 + borderOffset}`}
+                    fill="#1A1A2E"
+                  />
+                </>
+              ) : (
+                // Right node: triangle on left side, clip above and below triangle (on left side, horizontally mirrored)
+                <>
+                  {/* Top clipping triangle (left-pointing triangle above the node triangle) */}
+                  <Polygon
+                    points={`${borderOffset},${borderOffset} ${triangleDepth + borderOffset},${borderOffset} ${borderOffset},${nodeHeightValue / 2 + borderOffset}`}
+                    fill="#1A1A2E"
+                  />
+                  {/* Bottom clipping triangle (left-pointing triangle below the node triangle) */}
+                  <Polygon
+                    points={`${borderOffset},${nodeHeightValue + borderOffset} ${triangleDepth + borderOffset},${nodeHeightValue + borderOffset} ${borderOffset},${nodeHeightValue / 2 + borderOffset}`}
+                    fill="#1A1A2E"
+                  />
+                </>
               )}
-              <Text style={[styles.title, { fontSize: fontSizes.title }]}>{title}</Text>
-              {description && (
-                <Text style={[styles.description, { fontSize: fontSizes.description }]} numberOfLines={3}>
-                  {description}
-                </Text>
+            </>
+          ) : (
+            // No image: Just the combined path
+            <Path
+              d={combinedPath}
+              fill="#1A1A2E"
+              stroke={itemColor}
+              strokeWidth={borderWidth}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          )}
+
+          {/* Always draw the border stroke on top */}
+          <Path
+            d={combinedPath}
+            fill="transparent"
+            stroke={itemColor}
+            strokeWidth={borderWidth}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        </Svg>
+
+        {/* Local Image Overlay (for require() images that SVG can't handle) - Covers entire shape including triangle */}
+        {showImage && imageSource && !(typeof imageSource === 'object' && imageSource.uri) && (
+          <>
+            <Image
+              source={imageSource}
+              style={[
+                styles.localImageOverlay,
+                {
+                  left: 0,
+                  width: totalNodeWidth,
+                  height: nodeHeightValue,
+                },
+              ]}
+              resizeMode="cover"
+            />
+            {/* Color Overlay for Local Images */}
+            <View
+              style={[
+                styles.localColorOverlay,
+                {
+                  width: totalNodeWidth,
+                  height: nodeHeightValue,
+                  backgroundColor: '#1A1A2E',
+                  opacity: 0.5,
+                },
+              ]}
+            />
+            {/* Clipping triangles on triangle side to mask image */}
+            <Svg
+              width={totalNodeWidth}
+              height={nodeHeightValue}
+              style={styles.localImageMask}
+            >
+              {isLeft ? (
+                // Left node: triangle on right side, clip above and below triangle
+                <>
+                  {/* Top clipping triangle (right triangle above the node triangle) */}
+                  <Polygon
+                    points={`${nodeWidth},0 ${totalNodeWidth},0 ${totalNodeWidth},${nodeHeightValue / 2}`}
+                    fill="#1A1A2E"
+                  />
+                  {/* Bottom clipping triangle (right triangle below the node triangle) */}
+                  <Polygon
+                    points={`${nodeWidth},${nodeHeightValue} ${totalNodeWidth},${nodeHeightValue} ${totalNodeWidth},${nodeHeightValue / 2}`}
+                    fill="#1A1A2E"
+                  />
+                </>
+              ) : (
+                // Right node: triangle on left side, clip above and below triangle (on left side, horizontally mirrored)
+                <>
+                  {/* Top clipping triangle (left-pointing triangle above the node triangle) */}
+                  <Polygon
+                    points={`0,0 ${triangleDepth},0 0,${nodeHeightValue / 2}`}
+                    fill="#1A1A2E"
+                  />
+                  {/* Bottom clipping triangle (left-pointing triangle below the node triangle) */}
+                  <Polygon
+                    points={`0,${nodeHeightValue} ${triangleDepth},${nodeHeightValue} 0,${nodeHeightValue / 2}`}
+                    fill="#1A1A2E"
+                  />
+                </>
               )}
-            </View>
-          </View>
-        </ImageBackground>
-      ) : (
-        <View
-          style={[
-            styles.content,
-            { borderColor: itemColor },
-            isLeft ? styles.leftContent : styles.rightContent,
-          ]}
-          onLayout={(event) => {
-            const { height } = event.nativeEvent.layout;
-            if (height > 0) {
-              setNodeHeight(height);
-            }
-          }}
-        >
-          {/* Symbol/Icon */}
+            </Svg>
+            {/* Border stroke */}
+            <Svg
+              width={totalNodeWidth}
+              height={nodeHeightValue}
+              style={styles.localBorderSvg}
+            >
+              <Path
+                d={combinedPath}
+                fill="transparent"
+                stroke={itemColor}
+                strokeWidth={borderWidth}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            </Svg>
+          </>
+        )}
+
+        {/* Content Overlay (Text and Icons) */}
+        <View style={styles.contentOverlay}>
+          {/* Symbol/Icon - Positioned at triangle tip */}
           {symbol && (
-            <View style={[styles.symbolContainer, { backgroundColor: itemColor }]}>
+            <View style={[
+              styles.symbolContainer, 
+              { backgroundColor: itemColor },
+              isLeft 
+                ? { right: -triangleDepth / 2 - 14 } // Center on triangle tip for left nodes
+                : { left: -triangleDepth / 2 - 14 }  // Center on triangle tip for right nodes
+            ]}>
               {type === 'era' ? (
                 <Icon
                   source="chart-timeline"
@@ -204,7 +393,7 @@ const TimelineItem = ({
           )}
 
           {/* Content */}
-          <View style={styles.textContainer}>
+          <View style={[styles.textContainer, isLeft ? styles.leftTextContainer : styles.rightTextContainer]}>
             {time && (
               <Text style={[styles.time, { color: itemColor, fontSize: fontSizes.time }]}>{time}</Text>
             )}
@@ -215,161 +404,103 @@ const TimelineItem = ({
               </Text>
             )}
           </View>
+          
+          {/* Edit Button - Bottom Left for left nodes, Bottom Right for right nodes */}
+          {onEdit && (
+            <TouchableOpacity
+              style={[
+                styles.editButton,
+                isLeft ? styles.editButtonLeft : styles.editButtonRight
+              ]}
+              onPress={(e) => {
+                e.stopPropagation();
+                onEdit(item);
+              }}
+            >
+              <Text style={styles.editButtonText}>Edit</Text>
+            </TouchableOpacity>
+          )}
         </View>
-      )}
       </TouchableOpacity>
-      
-      {/* Triangle Shape - For left nodes, triangle on right edge */}
-      {isLeft && (
-        <View style={[
-          styles.triangleLeft, 
-          { 
-            borderLeftColor: itemColor, 
-            borderTopColor: 'transparent',
-            borderBottomColor: 'transparent',
-            borderTopWidth: innerTriangleTop,
-            borderBottomWidth: innerTriangleBottom,
-            borderLeftWidth: innerTriangleDepth,
-          }
-        ]} />
-      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    width: '45%',
+    width: Dimensions.get('window').width * 0.49, // Total width including triangle = 49% of screen (in pixels)
     marginVertical: 12,
-    flexDirection: 'row', // Arrange node and triangle side by side
     alignItems: 'center',
+  },
+  absoluteContainer: {
+    position: 'absolute',
   },
   leftContainer: {
     justifyContent: 'flex-end',
-    paddingRight: 8,
+    paddingRight: 0,
+    marginRight: 0, // Will be set dynamically to move closer to center
   },
   rightContainer: {
     justifyContent: 'flex-start',
-    paddingLeft: 8,
+    paddingLeft: 0,
+    marginLeft: 0, // Will be set dynamically to move closer to center
   },
-  nodeWrapper: {
-    flex: 1, // Node takes available space
-  },
-  content: {
-    backgroundColor: '#1A1A2E',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    overflow: 'visible', // Changed to 'visible' to allow triangle to extend
-    borderColor: '#2A2A3E',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-    minHeight: 100,
+  touchableWrapper: {
     position: 'relative',
-  },
-  leftContent: {
-    borderRightWidth: 0, // Remove right border, triangle will replace it
-    borderTopRightRadius: 0, // Remove rounded corner on right
-    borderBottomRightRadius: 0,
-  },
-  rightContent: {
-    borderLeftWidth: 0, // Remove left border, triangle will replace it
-    borderTopLeftRadius: 0, // Remove rounded corner on left
-    borderBottomLeftRadius: 0,
-  },
-  triangleLeft: {
-    // Triangle that points LEFT (used for left nodes on right edge)
-    // Positioned next to node, not absolutely
-    position: 'relative', // For inner triangle positioning
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    // borderTopWidth, borderBottomWidth, and borderLeftWidth set dynamically
-    borderTopColor: 'transparent', // Will be overridden
-    borderBottomColor: 'transparent', // Will be overridden
-    borderLeftColor: 'transparent', // Will be overridden
-    // No border on right side (touching the node)
-    borderRightWidth: 0,
-    alignSelf: 'stretch', // Match node height
-  },
-  triangleLeftInner: {
-    position: 'absolute',
-    left: -1.5, // Offset for border
-    top: 1.5, // Offset for border
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    // borderTopWidth, borderBottomWidth, and borderLeftWidth set dynamically
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: 'red', // Red fill
-    borderRightWidth: 0,
-    zIndex: 4,
-  },
-  triangleRight: {
-    // Triangle that points RIGHT (used for right nodes on left edge)
-    // Positioned next to node, not absolutely
-    position: 'relative', // For inner triangle positioning
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    // borderTopWidth, borderBottomWidth, and borderRightWidth set dynamically
-    borderTopColor: 'transparent', // Will be overridden
-    borderBottomColor: 'transparent', // Will be overridden
-    borderRightColor: 'transparent', // Will be overridden
-    // No border on left side (touching the node)
-    borderLeftWidth: 0,
-    alignSelf: 'stretch', // Match node height
-  },
-  triangleRightInner: {
-    position: 'absolute',
-    right: -1.5, // Offset for border
-    top: 1.5, // Offset for border
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    // borderTopWidth, borderBottomWidth, and borderRightWidth set dynamically
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderRightColor: 'red', // Red fill
-    borderLeftWidth: 0,
-    zIndex: 4,
-  },
-  contentWithImage: {
     width: '100%',
-    minHeight: 100,
-    backgroundColor: '#1A1A2E', // Fallback background in case image doesn't load
+    height: Dimensions.get('window').height * 0.15, // 15% of screen height
   },
-  backgroundImageStyle: {
-    opacity: 0.7, // Increased to make image more visible
+  svgContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
-  colorOverlay: {
+  localImageOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 1,
+  },
+  localColorOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 2,
+    opacity: 0.15,
+    pointerEvents: 'none',
+  },
+  localImageMask: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 3,
+    pointerEvents: 'none',
+  },
+  localBorderSvg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 4,
+    pointerEvents: 'none',
+  },
+  contentOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    opacity: 0.2, // Further reduced to make image more visible
-    zIndex: 1,
-  },
-  contentOverlay: {
-    flex: 1,
-    position: 'relative',
-    zIndex: 2,
-    minHeight: 100,
+    zIndex: 10,
+    pointerEvents: 'box-none', // Allow touches to pass through to TouchableOpacity
   },
   symbolContainer: {
     position: 'absolute',
-    top: 10,
-    right: 10,
+    top: '50%',
+    marginTop: -14, // Half of height (28/2) to center vertically
     width: 28,
     height: 28,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.3,
@@ -383,6 +514,16 @@ const styles = StyleSheet.create({
   },
   textContainer: {
     padding: 14,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  leftTextContainer: {
+    paddingLeft: 14,
+    paddingRight: 14,
+  },
+  rightTextContainer: {
+    paddingLeft: 14,
+    paddingRight: 14,
   },
   time: {
     fontWeight: '600',
@@ -400,6 +541,25 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     lineHeight: 17,
     fontSize: 12,
+  },
+  editButton: {
+    position: 'absolute',
+    bottom: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    zIndex: 20,
+  },
+  editButtonLeft: {
+    left: 8,
+  },
+  editButtonRight: {
+    right: 8,
+  },
+  editButtonText: {
+    color: '#8B5CF6',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.1,
   },
 });
 

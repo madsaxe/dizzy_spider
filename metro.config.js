@@ -15,6 +15,9 @@ const config = {
       },
     }),
   },
+  resolver: {
+    assetExts: getDefaultConfig(__dirname).resolver.assetExts.concat(['jpg', 'jpeg']),
+  },
 };
 
 module.exports = mergeConfig(getDefaultConfig(__dirname), config);

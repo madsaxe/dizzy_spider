@@ -1,20 +1,21 @@
-import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
-import { PinchGestureHandler } from 'react-native-gesture-handler';
 import Animated, {
-  useAnimatedGestureHandler,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
+  Easing,
+  runOnJS,
 } from 'react-native-reanimated';
-import Timeline from 'react-native-timeline-flatlist';
 import timelineService from '../services/timelineService';
+import CardStack from './CardStack';
 import { 
   transformToTimelineItems, 
   prepareTimelineData,
@@ -55,8 +56,9 @@ const TimelineVisualization = forwardRef(({
   const [scenes, setScenes] = useState({});
   const [loading, setLoading] = useState(true);
   const [timelineData, setTimelineData] = useState([]);
-  const [viewMode, setViewMode] = useState('advanced'); // 'simple' | 'advanced'
+  const [viewMode, setViewMode] = useState('simple'); // 'simple' | 'advanced'
   const [allTimelineItems, setAllTimelineItems] = useState([]);
+  const [refreshKey, setRefreshKey] = useState(0); // Used to trigger transition animations
   
   const {
     zoomLevel,
@@ -72,35 +74,134 @@ const TimelineVisualization = forwardRef(({
 
   const { theme, getItemColor, getSymbol } = useTimelineTheme();
 
-  // Pinch gesture for zoom
-  const scale = useSharedValue(1);
-  const savedScale = useSharedValue(1);
+  // Animated transition overlay for zoom level changes
+  const transitionProgress = useSharedValue(0);
+  const transitionColor = useSharedValue(theme.lineColor);
+  const previousZoomLevel = useRef(zoomLevel);
+  const pendingZoomAction = useRef(null); // Store pending zoom action to execute after animation
+  
+  // Get screen dimensions and theme values outside of worklet context
+  const screenWidth = Dimensions.get('window').width;
+  const screenHeight = Dimensions.get('window').height;
+  const centerX = screenWidth / 2;
+  const lineWidth = theme.spacing.line || 3;
 
-  const pinchHandler = useAnimatedGestureHandler({
-    onStart: (_, ctx) => {
-      ctx.startScale = savedScale.value;
-    },
-    onActive: (event, ctx) => {
-      scale.value = ctx.startScale * event.scale;
-    },
-    onEnd: () => {
-      savedScale.value = scale.value;
-      // Reset if scale is too small or too large
-      if (scale.value < 0.5) {
-        scale.value = withSpring(0.5);
-        savedScale.value = 0.5;
-      } else if (scale.value > 2) {
-        scale.value = withSpring(2);
-        savedScale.value = 2;
+  // Get color for each zoom level
+  const getLevelColor = (level) => {
+    switch (level) {
+      case 'eras':
+        return theme.itemColors.era || theme.lineColor;
+      case 'events':
+        return theme.itemColors.event || theme.lineColor;
+      case 'scenes':
+        return theme.itemColors.scene || theme.lineColor;
+      default:
+        return theme.lineColor;
+    }
+  };
+
+  // Execute pending zoom action when transition reaches full screen
+  const executePendingZoom = useCallback(() => {
+    if (pendingZoomAction.current) {
+      const action = pendingZoomAction.current;
+      pendingZoomAction.current = null;
+      
+      if (action.type === 'zoomIn') {
+        zoomIn(action.eraId);
+      } else if (action.type === 'zoomInEvent') {
+        zoomInEvent(action.eventId);
+      } else if (action.type === 'zoomOut') {
+        zoomOut();
+      } else if (action.type === 'resetZoom') {
+        resetZoom();
       }
-    },
-  });
+    }
+  }, [zoomIn, zoomInEvent, zoomOut, resetZoom]);
 
-  const animatedStyle = useAnimatedStyle(() => {
+  // Trigger transition animation when pending zoom action is set (only for advanced view)
+  useEffect(() => {
+    // Only run transition animation in advanced view mode
+    if (viewMode !== 'advanced') {
+      // Simple view doesn't use transition animations - zoom is executed directly
+      return;
+    }
+
+    // If there's a pending zoom action, start the transition (advanced view only)
+    if (pendingZoomAction.current) {
+      const targetLevel = pendingZoomAction.current.type === 'resetZoom' ? 'eras' :
+                          pendingZoomAction.current.type === 'zoomOut' ? 
+                            (zoomLevel === 'scenes' ? 'events' : 'eras') :
+                          pendingZoomAction.current.type === 'zoomIn' ? 'events' :
+                          pendingZoomAction.current.type === 'zoomInEvent' ? 'scenes' : zoomLevel;
+      
+      const previousColor = getLevelColor(zoomLevel);
+      const nextColor = getLevelColor(targetLevel);
+      
+      transitionColor.value = previousColor;
+      transitionProgress.value = 0;
+      
+      // Animate to full screen (expand) - first 60% of animation
+      // Use bounce easing: slow start, speeds up, bounces into position
+      // Total duration: 2000ms (2 seconds)
+      transitionProgress.value = withTiming(0.6, {
+        duration: 1200, // 60% of 2000ms for expansion
+        easing: Easing.out(Easing.bounce),
+      }, () => {
+        // After expansion completes (full screen coverage), execute pending zoom action
+        runOnJS(executePendingZoom)();
+        
+        // Change color to next level
+        transitionColor.value = nextColor;
+        
+        // Then fade out as container background takes over
+        transitionProgress.value = withTiming(1, {
+          duration: 800, // Remaining 40% of 2000ms for fade out
+          easing: Easing.in(Easing.ease),
+        }, () => {
+          // Reset for next transition
+          transitionProgress.value = 0;
+        });
+      });
+    }
+  }, [refreshKey, zoomLevel, theme, executePendingZoom, viewMode]);
+
+  // Update previousZoomLevel when zoom level changes (after transition completes)
+  useEffect(() => {
+    if (previousZoomLevel.current !== zoomLevel && !pendingZoomAction.current) {
+      previousZoomLevel.current = zoomLevel;
+    }
+  }, [zoomLevel]);
+
+  // Animated style for transition overlay
+  const transitionOverlayStyle = useAnimatedStyle(() => {
+    // Calculate width: starts at line width, expands to full screen
+    // Once expanded (progress > 0.6), stay at full width
+    const minWidth = lineWidth;
+    const maxWidth = screenWidth;
+    const expandProgress = Math.min(transitionProgress.value / 0.6, 1); // Clamp to 1.0 at 60% progress
+    const width = minWidth + (maxWidth - minWidth) * expandProgress;
+    
+    // Calculate left position to keep centered
+    const left = centerX - width / 2;
+    
+    // Opacity: full when expanding (0-0.6), fade out after color change (0.6-1.0)
+    const expandPhase = transitionProgress.value <= 0.6;
+    const opacity = expandPhase ? 1 : 1 - ((transitionProgress.value - 0.6) / 0.4);
+    
     return {
-      transform: [{ scale: scale.value }],
+      position: 'absolute',
+      left,
+      top: 0,
+      width,
+      height: screenHeight,
+      backgroundColor: transitionColor.value,
+      zIndex: 1000,
+      opacity: opacity > 0 ? opacity : 0,
     };
   });
+  
+  // Container background color based on zoom level (not animated, changes instantly)
+  const containerBackgroundColor = getLevelColor(zoomLevel);
 
   useEffect(() => {
     loadTimelineData();
@@ -166,17 +267,29 @@ const TimelineVisualization = forwardRef(({
     const itemType = originalData.type || event.type;
 
     // Handle zoom in for eras and events
-    if (viewMode === 'advanced') {
-      if (itemType === 'era' && zoomLevel === 'eras') {
+    if (itemType === 'era' && zoomLevel === 'eras') {
+      if (viewMode === 'advanced') {
+        // Advanced view: Store pending zoom action and trigger transition animation
+        pendingZoomAction.current = { type: 'zoomIn', eraId: itemData.id };
+        setRefreshKey(prev => prev + 1);
+      } else {
+        // Simple view: Execute zoom immediately without animation
         zoomIn(itemData.id);
-        return;
-      } else if (itemType === 'event' && zoomLevel === 'events') {
-        zoomInEvent(itemData.id);
-        return;
       }
+      return;
+    } else if (itemType === 'event' && zoomLevel === 'events') {
+      if (viewMode === 'advanced') {
+        // Advanced view: Store pending zoom action and trigger transition animation
+        pendingZoomAction.current = { type: 'zoomInEvent', eventId: itemData.id };
+        setRefreshKey(prev => prev + 1);
+      } else {
+        // Simple view: Execute zoom immediately without animation
+        zoomInEvent(itemData.id);
+      }
+      return;
     }
 
-    // Handle regular press callbacks
+    // Handle regular press callbacks (for scenes or when not zooming)
     switch (itemType) {
       case 'era':
         if (onEraPress) {
@@ -196,17 +309,84 @@ const TimelineVisualization = forwardRef(({
     }
   };
 
-  const getBreadcrumbText = () => {
-    if (zoomLevel === 'eras') return 'Eras';
-    if (zoomLevel === 'events') {
-      const era = eras.find(e => e.id === selectedEraId);
-      return era ? `Events: ${era.title}` : 'Events';
+  const handleTimelineEventEdit = (event) => {
+    const originalData = event._originalData || event;
+    if (!originalData) return;
+
+    const itemData = originalData.data || originalData;
+    const itemType = originalData.type || event.type;
+
+    // Handle edit callbacks
+    switch (itemType) {
+      case 'era':
+        if (onEraEdit) {
+          onEraEdit(itemData);
+        }
+        break;
+      case 'event':
+        if (onEventEdit) {
+          onEventEdit(itemData);
+        }
+        break;
+      case 'scene':
+        if (onSceneEdit) {
+          onSceneEdit(itemData);
+        }
+        break;
     }
+  };
+
+  const getBreadcrumbItems = () => {
+    const items = [];
+    
+    // Always start with "Timeline" - goes back to eras view
+    items.push({ 
+      label: 'Timeline', 
+      onPress: () => {
+        if (viewMode === 'advanced') {
+          // Advanced view: Store pending zoom action and trigger transition animation
+          pendingZoomAction.current = { type: 'resetZoom' };
+          setRefreshKey(prev => prev + 1);
+        } else {
+          // Simple view: Execute zoom immediately without animation
+          resetZoom();
+        }
+      }, 
+      isActive: zoomLevel === 'eras' 
+    });
+    
+    if (zoomLevel === 'events' || zoomLevel === 'scenes') {
+      const era = eras.find(e => e.id === selectedEraId);
+      if (era) {
+        items.push({ 
+          label: era.title, 
+          onPress: zoomLevel === 'scenes' ? () => {
+            if (viewMode === 'advanced') {
+              // Advanced view: Store pending zoom action and trigger transition animation
+              pendingZoomAction.current = { type: 'zoomOut' };
+              setRefreshKey(prev => prev + 1);
+            } else {
+              // Simple view: Execute zoom immediately without animation
+              zoomOut();
+            }
+          } : null, // Go back to events if at scenes
+          isActive: zoomLevel === 'events' 
+        });
+      }
+    }
+    
     if (zoomLevel === 'scenes') {
       const event = Object.values(events).flat().find(e => e.id === selectedEventId);
-      return event ? `Scenes: ${event.title}` : 'Scenes';
+      if (event) {
+        items.push({ 
+          label: event.title, 
+          onPress: null, // Current level, no navigation
+          isActive: true 
+        });
+      }
     }
-    return 'Timeline';
+    
+    return items;
   };
 
   const handleEraDelete = async (era) => {
@@ -238,93 +418,6 @@ const TimelineVisualization = forwardRef(({
     );
   }
 
-  const renderDetail = (rowData, sectionID, rowID) => {
-    const originalData = rowData._originalData;
-    if (!originalData) return null;
-
-    const item = originalData.data;
-    const itemType = originalData.type;
-
-    return (
-      <View style={styles.timelineDetail}>
-        <View style={styles.timelineDetailHeader}>
-          <Text style={styles.timelineDetailTitle}>{rowData.title}</Text>
-          <View style={styles.timelineDetailActions}>
-            {itemType === 'era' && onEraEdit && (
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => onEraEdit(item)}
-              >
-                <Text style={styles.actionText}>Edit</Text>
-              </TouchableOpacity>
-            )}
-            {itemType === 'event' && onEventEdit && (
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => onEventEdit(item)}
-              >
-                <Text style={styles.actionText}>Edit</Text>
-              </TouchableOpacity>
-            )}
-            {itemType === 'scene' && onSceneEdit && (
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => onSceneEdit(item)}
-              >
-                <Text style={styles.actionText}>Edit</Text>
-              </TouchableOpacity>
-            )}
-            {itemType === 'era' && onEraDelete && (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={() => handleEraDelete(item)}
-              >
-                <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
-              </TouchableOpacity>
-            )}
-            {itemType === 'event' && onEventDelete && (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={() => handleEventDelete(item)}
-              >
-                <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
-              </TouchableOpacity>
-            )}
-            {itemType === 'scene' && onSceneDelete && (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={() => handleSceneDelete(item)}
-              >
-                <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-        {rowData.description && (
-          <Text style={styles.timelineDetailDescription}>{rowData.description}</Text>
-        )}
-        <Text style={styles.timelineDetailTime}>{rowData.time}</Text>
-        
-        {/* Add action buttons for creating child items - context-aware based on zoom level */}
-        {zoomLevel === 'eras' && itemType === 'era' && onAddEvent && (
-          <TouchableOpacity
-            style={styles.addChildButton}
-            onPress={() => onAddEvent(item.id)}
-          >
-            <Text style={styles.addChildButtonText}>+ Add Event to this Era</Text>
-          </TouchableOpacity>
-        )}
-        {zoomLevel === 'events' && itemType === 'event' && onAddScene && (
-          <TouchableOpacity
-            style={styles.addChildButton}
-            onPress={() => onAddScene(item.id)}
-          >
-            <Text style={styles.addChildButtonText}>+ Add Scene to this Event</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    );
-  };
 
   if (eras.length === 0) {
     return (
@@ -339,115 +432,114 @@ const TimelineVisualization = forwardRef(({
     );
   }
 
+  const breadcrumbItems = getBreadcrumbItems();
+
   return (
-    <View style={styles.container}>
-      {/* Zoom Controls and View Toggle */}
+    <View style={[styles.container, { backgroundColor: containerBackgroundColor }]}>
+      {/* Breadcrumb Navigation, Add Button, and View Toggle */}
       <View style={styles.controlsBar}>
-        <View style={styles.zoomControls}>
-          <Text style={styles.breadcrumb}>{getBreadcrumbText()}</Text>
-          {canZoomOut && (
-            <TouchableOpacity style={styles.zoomButton} onPress={zoomOut}>
-              <Text style={styles.zoomButtonText}>← Back</Text>
-            </TouchableOpacity>
-          )}
-          {zoomLevel !== 'eras' && (
-            <TouchableOpacity style={styles.zoomButton} onPress={resetZoom}>
-              <Text style={styles.zoomButtonText}>Reset</Text>
-            </TouchableOpacity>
-          )}
+        <View style={styles.breadcrumbContainer}>
+          {breadcrumbItems.map((item, index) => (
+            <React.Fragment key={index}>
+              {index > 0 && (
+                <Text style={styles.breadcrumbSeparator}> / </Text>
+              )}
+              <TouchableOpacity
+                onPress={item.onPress}
+                disabled={!item.onPress || item.isActive}
+                style={styles.breadcrumbItem}
+              >
+                <Text
+                  style={[
+                    styles.breadcrumbText,
+                    item.isActive && styles.breadcrumbTextActive,
+                    !item.onPress && styles.breadcrumbTextDisabled
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            </React.Fragment>
+          ))}
         </View>
-        <TouchableOpacity
-          style={styles.viewToggle}
-          onPress={() => setViewMode(viewMode === 'simple' ? 'advanced' : 'simple')}
-        >
-          <Text style={styles.viewToggleText}>
-            {viewMode === 'simple' ? 'Advanced' : 'Simple'}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.controlsRight}>
+          {/* Context-aware Add Button */}
+          {zoomLevel === 'eras' && onAddEra && (
+            <TouchableOpacity
+              style={[styles.addButtonNav, styles.addButtonNavMargin]}
+              onPress={onAddEra}
+            >
+              <Text style={styles.addButtonNavText}>+ Add Era</Text>
+            </TouchableOpacity>
+          )}
+          {zoomLevel === 'events' && selectedEraId && onAddEvent && (
+            <TouchableOpacity
+              style={[styles.addButtonNav, styles.addButtonNavMargin]}
+              onPress={() => onAddEvent(selectedEraId)}
+            >
+              <Text style={styles.addButtonNavText}>+ Add Event</Text>
+            </TouchableOpacity>
+          )}
+          {zoomLevel === 'scenes' && selectedEventId && onAddScene && (
+            <TouchableOpacity
+              style={[styles.addButtonNav, styles.addButtonNavMargin]}
+              onPress={() => onAddScene(selectedEventId)}
+            >
+              <Text style={styles.addButtonNavText}>+ Add Scene</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.viewToggle}
+            onPress={() => setViewMode(viewMode === 'simple' ? 'advanced' : 'simple')}
+          >
+            <Text style={styles.viewToggleText}>
+              {viewMode === 'simple' ? 'Advanced' : 'Simple'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
             {/* Timeline Content */}
-            <PinchGestureHandler onGestureEvent={pinchHandler} enabled={viewMode === 'advanced'}>
-              <Animated.View style={[styles.timelineContainer, viewMode === 'advanced' && animatedStyle]}>
-                {viewMode === 'advanced' ? (
-            <AlternatingTimeline
-              ref={alternatingTimelineRef}
-              data={timelineData}
-              onItemPress={handleTimelineEventPress}
-              onRefresh={loadTimelineData}
-              refreshing={loading}
-              lineColor={theme.lineColor}
-              lineWidth={theme.spacing.line}
-              colors={theme.itemColors}
-              symbols={theme.symbols}
-              showImages={true}
-              fontSizes={theme.fontSizes}
-              spacing={theme.spacing}
-              isFictional={isFictional}
-              footerComponent={
-                (() => {
-                  if (zoomLevel === 'eras') {
-                    // At eras level, show add event buttons for each era
-                    return null; // Will be handled in timeline items
-                  } else if (zoomLevel === 'events' && selectedEraId && onAddEvent) {
-                    return (
-                      <TouchableOpacity style={styles.addButton} onPress={() => onAddEvent(selectedEraId)}>
-                        <Text style={styles.addButtonText}>+ Add Event</Text>
-                      </TouchableOpacity>
-                    );
-                  } else if (zoomLevel === 'scenes' && selectedEventId && onAddScene) {
-                    return (
-                      <TouchableOpacity style={styles.addButton} onPress={() => onAddScene(selectedEventId)}>
-                        <Text style={styles.addButtonText}>+ Add Scene</Text>
-                      </TouchableOpacity>
-                    );
-                  }
-                  return null;
-                })()
-              }
-            />
-          ) : (
-            <Timeline
-              data={timelineData}
-              circleSize={20}
-              timeContainerStyle={{ minWidth: 100, maxWidth: 100 }}
-              timeStyle={[styles.timeStyle, { backgroundColor: theme.lineColor }]}
-              descriptionStyle={[styles.descriptionStyle, { fontSize: theme.fontSizes.description }]}
-              titleStyle={[styles.titleStyle, { fontSize: theme.fontSizes.title }]}
-              detailContainerStyle={styles.detailContainer}
-              onEventPress={handleTimelineEventPress}
-              renderDetail={renderDetail}
-              refreshControl={
-                <RefreshControl refreshing={loading} onRefresh={loadTimelineData} />
-              }
-              ListFooterComponent={
-                (() => {
-                  if (zoomLevel === 'eras') {
-                    // At eras level, show add event buttons for each era
-                    return null; // Will be handled in timeline items
-                  } else if (zoomLevel === 'events' && selectedEraId && onAddEvent) {
-                    return (
-                      <TouchableOpacity style={styles.addButton} onPress={() => onAddEvent(selectedEraId)}>
-                        <Text style={styles.addButtonText}>+ Add Event</Text>
-                      </TouchableOpacity>
-                    );
-                  } else if (zoomLevel === 'scenes' && selectedEventId && onAddScene) {
-                    return (
-                      <TouchableOpacity style={styles.addButton} onPress={() => onAddScene(selectedEventId)}>
-                        <Text style={styles.addButtonText}>+ Add Scene</Text>
-                      </TouchableOpacity>
-                    );
-                  }
-                  return null;
-                })()
-              }
-              options={{
-                style: { paddingTop: 5, paddingLeft: 5, paddingRight: 5 },
-              }}
+            <View style={[styles.timelineContainer, { backgroundColor: viewMode === 'advanced' ? containerBackgroundColor : theme.backgroundColor }]}>
+              {/* Transition Overlay - animated background that expands from center timeline (advanced view only) */}
+              {viewMode === 'advanced' && (
+                <Animated.View style={transitionOverlayStyle} />
+              )}
+              
+              {viewMode === 'advanced' ? (
+                <AlternatingTimeline
+                  ref={alternatingTimelineRef}
+                  data={timelineData}
+                  onItemPress={handleTimelineEventPress}
+                  onItemEdit={handleTimelineEventEdit}
+                  onRefresh={loadTimelineData}
+                  refreshing={loading}
+                  lineColor={theme.lineColor}
+                  lineWidth={theme.spacing.line}
+                  colors={theme.itemColors}
+                  symbols={theme.symbols}
+                  showImages={true}
+                  fontSizes={theme.fontSizes}
+                  spacing={theme.spacing}
+                  isFictional={isFictional}
+                  footerComponent={null}
                   />
-                )}
-              </Animated.View>
-            </PinchGestureHandler>
+              ) : (
+                <CardStack
+                  data={timelineData}
+                  onItemPress={handleTimelineEventPress}
+                  onItemEdit={handleTimelineEventEdit}
+                  colors={theme.itemColors}
+                  showImages={true}
+                  fontSizes={theme.fontSizes}
+                  onRefresh={loadTimelineData}
+                  refreshing={loading}
+                  events={events}
+                  scenes={scenes}
+                  zoomLevel={zoomLevel}
+                />
+              )}
+            </View>
     </View>
   );
 });
@@ -469,31 +561,53 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: '#2A2A3E',
   },
-  zoomControls: {
+  breadcrumbContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    flexWrap: 'wrap',
   },
-  breadcrumb: {
+  breadcrumbItem: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  breadcrumbText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginRight: 12,
+    fontWeight: '500',
+    color: '#8B5CF6',
     letterSpacing: -0.2,
   },
-  zoomButton: {
+  breadcrumbTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  breadcrumbTextDisabled: {
+    color: '#9CA3AF',
+  },
+  breadcrumbSeparator: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginHorizontal: 4,
+  },
+  controlsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addButtonNavMargin: {
+    marginRight: 8,
+  },
+  addButtonNav: {
     paddingHorizontal: 12,
     paddingVertical: 7,
     backgroundColor: '#8B5CF6',
     borderRadius: 10,
-    marginRight: 8,
     shadowColor: '#8B5CF6',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.3,
     shadowRadius: 2,
     elevation: 2,
   },
-  zoomButtonText: {
+  addButtonNavText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
@@ -538,86 +652,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-  timeStyle: {
-    textAlign: 'center',
-    color: 'white',
-    padding: 5,
-    borderRadius: 13,
-  },
-  descriptionStyle: {
-    color: '#B0B0B0',
-    fontSize: 14,
-  },
-  titleStyle: {
-    color: '#E0E0E0',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  detailContainer: {
-    backgroundColor: '#1A1A2E',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 10,
-    borderWidth: 0.5,
-    borderColor: '#2A2A3E',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  timelineDetail: {
-    padding: 8,
-  },
-  timelineDetailHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  timelineDetailTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    flex: 1,
-    letterSpacing: -0.3,
-  },
-  timelineDetailActions: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginLeft: 8,
-    borderRadius: 8,
-    backgroundColor: '#1A1A2E',
-    borderWidth: 0.5,
-    borderColor: '#2A2A3E',
-  },
-  deleteButton: {
-    backgroundColor: '#1A0F0F',
-    borderColor: '#3A1A1A',
-  },
-  actionText: {
-    fontSize: 11,
-    color: '#8B5CF6',
-    fontWeight: '600',
-    letterSpacing: 0.1,
-  },
-  deleteText: {
-    color: '#EF4444',
-  },
-  timelineDetailDescription: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginBottom: 8,
-    lineHeight: 17,
-  },
-  timelineDetailTime: {
-    fontSize: 11,
-    color: '#8B5CF6',
-    fontWeight: '500',
-  },
   addButton: {
     backgroundColor: '#8B5CF6',
     padding: 14,
@@ -655,4 +689,5 @@ const styles = StyleSheet.create({
 });
 
 export default TimelineVisualization;
+
 

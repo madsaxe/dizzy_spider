@@ -15,6 +15,7 @@ import { useApp } from '../context/AppContext';
 import { TimelineZoomProvider, useTimelineZoom } from '../context/TimelineZoomContext';
 import TimelineVisualization from '../components/TimelineVisualization';
 import timelineService from '../services/timelineService';
+import { getLocalImage, hasLocalImage } from '../assets/images';
 
 const TimelineDetailScreenContent = () => {
   const route = useRoute();
@@ -403,16 +404,33 @@ const TimelineDetailScreenContent = () => {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
         {/* Background Image for Header when drilled into an item */}
-        {headerImageUrl ? (
-          <ImageBackground
-            source={{ uri: headerImageUrl }}
-            style={styles.headerBackgroundImage}
-            resizeMode="cover"
-            imageStyle={styles.headerBackgroundImageStyle}
-          >
-            <View style={styles.headerOverlay} />
-          </ImageBackground>
-        ) : null}
+        {headerImageUrl ? (() => {
+          // Determine image source - handle both local assets and remote URLs
+          const getHeaderImageSource = () => {
+            if (!headerImageUrl) return null;
+            
+            // Check if it's a local image key
+            if (hasLocalImage(headerImageUrl)) {
+              return getLocalImage(headerImageUrl);
+            }
+            
+            // Otherwise treat as remote URL
+            return { uri: headerImageUrl.trim() };
+          };
+
+          const headerImageSource = getHeaderImageSource();
+          
+          return headerImageSource ? (
+            <ImageBackground
+              source={headerImageSource}
+              style={styles.headerBackgroundImage}
+              resizeMode="cover"
+              imageStyle={styles.headerBackgroundImageStyle}
+            >
+              <View style={styles.headerOverlay} />
+            </ImageBackground>
+          ) : null;
+        })() : null}
         
         {/* Navigation Bar */}
         <View style={[styles.navBar, headerImageUrl && styles.navBarWithBackground]}>
@@ -634,18 +652,21 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+    textAlign: 'center',
   },
   descriptionWithBackground: {
     color: '#E0E0E0',
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+    textAlign: 'center',
   },
   typeWithBackground: {
     color: '#FFFFFF',
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+    textAlign: 'center',
   },
   navBar: {
     flexDirection: 'row',
@@ -662,6 +683,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#1A1A2E',
+    borderWidth: 0.5,
+    borderColor: '#FFFFFF',
   },
   navBarButtonWithBorder: {
     borderRightWidth: 1,
@@ -676,17 +699,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     marginBottom: 6,
     letterSpacing: -0.4,
+    textAlign: 'center',
   },
   description: {
     fontSize: 13,
     color: '#9CA3AF',
     marginBottom: 8,
     lineHeight: 18,
+    textAlign: 'center',
   },
   type: {
     fontSize: 11,
     color: '#8B5CF6',
     fontWeight: '500',
+    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,

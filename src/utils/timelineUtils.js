@@ -118,13 +118,17 @@ export const transformToTimelineItems = (eras, eventsMap, scenesMap, isFictional
  */
 export const formatForTimelineComponent = (item) => {
   return {
+    id: item.id,
     time: item.timeDisplay || 'No time specified',
     title: item.title,
     description: item.description,
     circleColor: getItemColor(item.type),
     lineColor: getItemColor(item.type),
     // Store original data for callbacks
-    _originalData: item,
+    _originalData: {
+      type: item.type,
+      data: item.data || item,
+    },
   };
 };
 
@@ -147,12 +151,22 @@ const getItemColor = (type) => {
 };
 
 /**
- * Transform timeline items for react-native-timeline-flatlist
+ * Transform timeline items for react-native-timeline-flatlist or CardStack
  * @param {Array} timelineItems - Items from transformToTimelineItems
- * @returns {Array} Formatted items ready for Timeline component
+ * @returns {Array} Formatted items ready for Timeline or CardStack component
  */
 export const prepareTimelineData = (timelineItems) => {
-  return timelineItems.map(formatForTimelineComponent);
+  return timelineItems.map(item => {
+    const formatted = formatForTimelineComponent(item);
+    // Ensure imageUrl is included from the original data
+    const data = item.data || item;
+    if (data.imageUrl) {
+      formatted.imageUrl = data.imageUrl;
+    }
+    // Ensure type is included for CardStack
+    formatted.type = item.type;
+    return formatted;
+  });
 };
 
 /**

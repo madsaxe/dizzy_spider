@@ -38,6 +38,7 @@ class SeedDataService {
       startTime: '1933-01-01',
       endTime: '1939-08-31',
       order: 0,
+      imageUrl: 'pre-war-era', // Local image key
     });
 
     // Era 2: Early War (1939-1941)
@@ -48,6 +49,7 @@ class SeedDataService {
       startTime: '1939-09-01',
       endTime: '1941-12-06',
       order: 1,
+      imageUrl: 'early-war-era', // Local image key
     });
 
     // Era 3: Global War (1942-1943)
@@ -58,6 +60,7 @@ class SeedDataService {
       startTime: '1942-01-01',
       endTime: '1943-12-31',
       order: 2,
+      imageUrl: 'global-war-era', // Local image key
     });
 
     // Era 4: Allied Advance (1944)
@@ -68,6 +71,7 @@ class SeedDataService {
       startTime: '1944-01-01',
       endTime: '1944-12-31',
       order: 3,
+      imageUrl: 'allied-advance-era', // Local image key
     });
 
     // Era 5: End of War (1945)
@@ -78,6 +82,7 @@ class SeedDataService {
       startTime: '1945-01-01',
       endTime: '1945-09-02',
       order: 4,
+      imageUrl: 'end-war-era', // Local image key
     });
 
     // Era 6: Post-War Period
@@ -88,6 +93,7 @@ class SeedDataService {
       startTime: '1945-09-03',
       endTime: '1950-12-31',
       order: 5,
+      imageUrl: 'post-war-era', // Local image key
     });
 
     // ========== PRE-WAR ERA EVENTS ==========
@@ -97,6 +103,7 @@ class SeedDataService {
       description: 'Adolf Hitler is appointed Chancellor of Germany, marking the beginning of Nazi rule',
       time: '1933-01-30',
       order: 0,
+      imageUrl: 'hitler-chancellor', // Local image key
     });
     await this.createScenesForEvent(hitlerRise.id, [
       { title: 'Appointment Ceremony', description: 'Hitler is sworn in as Chancellor in Berlin', time: '1933-01-30', order: 0 },
@@ -110,6 +117,7 @@ class SeedDataService {
       description: 'The German parliament building is set on fire, used as pretext for emergency powers',
       time: '1933-02-27',
       order: 1,
+      imageUrl: 'reichstag-fire', // Local image key
     });
     await this.createScenesForEvent(reichstagFire.id, [
       { title: 'Fire Breaks Out', description: 'The Reichstag building is set ablaze in the evening', time: '1933-02-27', order: 0 },
@@ -193,6 +201,7 @@ class SeedDataService {
       description: 'Germany invades Poland, marking the start of World War II',
       time: '1939-09-01',
       order: 0,
+      imageUrl: 'poland-invasion', // Local image key
     });
     await this.createScenesForEvent(invasionPoland.id, [
       { title: 'Blitzkrieg Begins', description: 'German forces launch rapid attack using combined arms', time: '1939-09-01', order: 0 },
@@ -306,6 +315,7 @@ class SeedDataService {
       description: 'Major turning point battle on the Eastern Front, largest battle in history',
       time: '1942-08-23',
       order: 1,
+      imageUrl: 'stalingrad', // Local image key
     });
     await this.createScenesForEvent(stalingrad.id, [
       { title: 'German Advance', description: 'German forces reach the Volga River and enter Stalingrad', time: '1942-08-23', order: 0 },
@@ -362,6 +372,7 @@ class SeedDataService {
       description: 'Allied forces launch Operation Overlord, the largest seaborne invasion in history',
       time: '1944-06-06',
       order: 0,
+      imageUrl: 'd-day', // Local image key
     });
     await this.createScenesForEvent(dDay.id, [
       { title: 'Airborne Operations', description: 'Paratroopers drop behind enemy lines', time: '1944-06-06', order: 0 },
@@ -419,6 +430,7 @@ class SeedDataService {
       description: 'Nazi Germany surrenders, ending the war in Europe',
       time: '1945-05-08',
       order: 1,
+      imageUrl: 'victory-europe', // Local image key
     });
     await this.createScenesForEvent(veDay.id, [
       { title: 'Unconditional Surrender', description: 'Germany signs unconditional surrender', time: '1945-05-07', order: 0 },

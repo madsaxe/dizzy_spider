@@ -34,6 +34,7 @@ const CreateSceneScreen = () => {
   const [imageUrl, setImageUrl] = useState(null);
   const [imageSourceType, setImageSourceType] = useState('picker'); // 'picker' or 'url'
   const [imageUrlInput, setImageUrlInput] = useState('');
+  const [parentEventDate, setParentEventDate] = useState(null);
 
   useEffect(() => {
     navigation.setOptions({
@@ -52,12 +53,20 @@ const CreateSceneScreen = () => {
     const loadData = async () => {
       const event = await timelineService.getEventById(eventId);
       if (event) {
+        let timelineIsFictional = false;
         const era = await timelineService.getEraById(event.eraId);
         if (era) {
           const timeline = await timelineService.getTimelineById(era.timelineId);
           if (timeline) {
+            timelineIsFictional = timeline.isFictional;
             setIsFictional(timeline.isFictional);
           }
+        }
+        // Set parent event's date as default for scenes in historical timelines
+        if (event.time && !timelineIsFictional) {
+          setParentEventDate(event.time);
+          // Also set the initial time value to the event's date
+          setTime(event.time);
         }
         const scenes = await timelineService.getScenesByEventId(eventId);
         setAvailableScenes(scenes);
@@ -189,6 +198,8 @@ const CreateSceneScreen = () => {
             isFictional={isFictional}
             isRelational={false}
             placeholder="Enter time"
+            showTimeOfDay={!isFictional} // Show time of day selector for historical timelines
+            defaultValue={parentEventDate} // Default to parent event's date
           />
         )}
 

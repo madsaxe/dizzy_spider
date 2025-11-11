@@ -56,6 +56,39 @@ const TimelineListScreen = () => {
     );
   };
 
+  const handleDeleteAll = () => {
+    if (timelines.length === 0) {
+      Alert.alert('No Timelines', 'There are no timelines to delete.');
+      return;
+    }
+
+    Alert.alert(
+      'Delete All Timelines',
+      `⚠️ TEMPORARY FEATURE ⚠️\n\nAre you sure you want to delete ALL ${timelines.length} timeline(s)? This will permanently delete all eras, events, and scenes. This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            // Close all open swipeables
+            Object.values(swipeableRefs.current).forEach(ref => {
+              if (ref) ref.close();
+            });
+            
+            // Delete all timelines
+            for (const timeline of timelines) {
+              await deleteTimeline(timeline.id);
+            }
+            
+            await refreshTimelines();
+            Alert.alert('Success', 'All timelines have been deleted.');
+          },
+        },
+      ]
+    );
+  };
+
   const renderRightActions = (progress, dragX, timeline) => {
     const scale = dragX.interpolate({
       inputRange: [-100, 0],
@@ -235,6 +268,18 @@ const TimelineListScreen = () => {
         style={styles.fab}
         onPress={() => navigation.navigate('CreateTimeline')}
       />
+      {/* Temporary Delete All Button */}
+      <View style={[styles.deleteAllContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <Button
+          mode="text"
+          textColor="#9CA3AF"
+          onPress={handleDeleteAll}
+          style={styles.deleteAllButton}
+          labelStyle={styles.deleteAllButtonLabel}
+        >
+          Delete All
+        </Button>
+      </View>
     </View>
   );
 };
@@ -358,6 +403,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  deleteAllContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    alignItems: 'flex-start',
+  },
+  deleteAllButton: {
+    alignSelf: 'flex-start',
+  },
+  deleteAllButtonLabel: {
+    fontSize: 12,
+    opacity: 0.7,
   },
 });
 
