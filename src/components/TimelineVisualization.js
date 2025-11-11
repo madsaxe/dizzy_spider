@@ -537,6 +537,8 @@ const TimelineVisualization = forwardRef(({
                   events={events}
                   scenes={scenes}
                   zoomLevel={zoomLevel}
+                  selectedEraId={selectedEraId}
+                  selectedEventId={selectedEventId}
                 />
               )}
             </View>
