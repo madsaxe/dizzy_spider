@@ -4,12 +4,23 @@ import React
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
   var window: UIWindow?
+  var bridge: RCTBridge?
 
   func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    let bridge = RCTBridge(delegate: self, launchOptions: launchOptions)!
+    // Initialize bridge with delegate to ensure all native modules (including Reanimated) are loaded
+    bridge = RCTBridge(delegate: self, launchOptions: launchOptions)
+    
+    guard let bridge = bridge else {
+      return false
+    }
+    
+    // Ensure all native modules are initialized before creating root view
+    // This is especially important for Reanimated in brownfield apps
+    RCTSetLogThreshold(.info)
+    
     let rootView = RCTRootView(
       bridge: bridge,
       moduleName: "TimelineApp",

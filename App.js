@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { AppProvider } from './src/context/AppContext';
+import { TimelineThemeProvider } from './src/context/TimelineThemeContext';
 import TimelineListScreen from './src/screens/TimelineListScreen';
 import CreateTimelineScreen from './src/screens/CreateTimelineScreen';
 import TimelineDetailScreen from './src/screens/TimelineDetailScreen';
@@ -11,13 +12,15 @@ import CreateSceneScreen from './src/screens/CreateSceneScreen';
 import EditEraScreen from './src/screens/EditEraScreen';
 import EditEventScreen from './src/screens/EditEventScreen';
 import EditSceneScreen from './src/screens/EditSceneScreen';
+import TimelineSettingsScreen from './src/screens/TimelineSettingsScreen';
 
 const Stack = createStackNavigator();
 
 const App = () => {
   return (
     <AppProvider>
-      <NavigationContainer>
+      <TimelineThemeProvider>
+        <NavigationContainer>
         <Stack.Navigator
           initialRouteName="TimelineList"
           screenOptions={{
@@ -75,8 +78,14 @@ const App = () => {
             component={EditSceneScreen}
             options={{ title: 'Edit Scene' }}
           />
+          <Stack.Screen
+            name="TimelineSettings"
+            component={TimelineSettingsScreen}
+            options={{ title: 'Timeline Settings' }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
+      </TimelineThemeProvider>
     </AppProvider>
   );
 };

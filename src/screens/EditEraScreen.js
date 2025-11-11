@@ -7,12 +7,14 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useApp } from '../context/AppContext';
 import TimeInput from '../components/TimeInput';
 import { validateEra } from '../utils/validation';
 import timelineService from '../services/timelineService';
+import imageService from '../services/imageService';
 
 const EditEraScreen = () => {
   const route = useRoute();
@@ -25,6 +27,7 @@ const EditEraScreen = () => {
   const [endTime, setEndTime] = useState(era.endTime || null);
   const [loading, setLoading] = useState(false);
   const [isFictional, setIsFictional] = useState(false);
+  const [imageUrl, setImageUrl] = useState(era.imageUrl || null);
 
   useEffect(() => {
     const loadTimeline = async () => {
@@ -42,6 +45,7 @@ const EditEraScreen = () => {
       description: description.trim(),
       startTime: startTime || null,
       endTime: endTime || null,
+      imageUrl: imageUrl || null,
     };
 
     const validation = validateEra({ ...era, ...eraData });
@@ -94,6 +98,44 @@ const EditEraScreen = () => {
           onStartTimeChange={setStartTime}
           onEndTimeChange={setEndTime}
         />
+
+        <Text style={styles.label}>Hero Image (Optional)</Text>
+        {imageUrl ? (
+          <View style={styles.imageContainer}>
+            <Image source={{ uri: imageUrl }} style={styles.previewImage} />
+            <View style={styles.imageActions}>
+              <TouchableOpacity
+                style={styles.changeImageButton}
+                onPress={async () => {
+                  const uri = await imageService.showImagePicker();
+                  if (uri) {
+                    setImageUrl(uri);
+                  }
+                }}
+              >
+                <Text style={styles.changeImageText}>Change Image</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.removeImageButton}
+                onPress={() => setImageUrl(null)}
+              >
+                <Text style={styles.removeImageText}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.imagePickerButton}
+            onPress={async () => {
+              const uri = await imageService.showImagePicker();
+              if (uri) {
+                setImageUrl(uri);
+              }
+            }}
+          >
+            <Text style={styles.imagePickerText}>Select Image</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={[styles.updateButton, loading && styles.updateButtonDisabled]}
@@ -149,6 +191,58 @@ const styles = StyleSheet.create({
   updateButtonText: {
     color: '#fff',
     fontSize: 18,
+    fontWeight: '600',
+  },
+  imageContainer: {
+    marginVertical: 8,
+  },
+  previewImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: '#f0f0f0',
+  },
+  imageActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  changeImageButton: {
+    flex: 1,
+    padding: 8,
+    backgroundColor: '#e3f2fd',
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  changeImageText: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  imagePickerButton: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    backgroundColor: '#fafafa',
+  },
+  imagePickerText: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  removeImageButton: {
+    flex: 1,
+    padding: 8,
+    backgroundColor: '#ffebee',
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  removeImageText: {
+    color: '#FF3B30',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

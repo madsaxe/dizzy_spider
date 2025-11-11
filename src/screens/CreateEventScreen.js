@@ -7,12 +7,14 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useApp } from '../context/AppContext';
 import TimeInput from '../components/TimeInput';
 import { validateEvent } from '../utils/validation';
 import timelineService from '../services/timelineService';
+import imageService from '../services/imageService';
 
 const CreateEventScreen = () => {
   const route = useRoute();
@@ -28,6 +30,7 @@ const CreateEventScreen = () => {
   const [availableEvents, setAvailableEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isFictional, setIsFictional] = useState(false);
+  const [imageUrl, setImageUrl] = useState(null);
 
   React.useEffect(() => {
     const loadData = async () => {
@@ -53,6 +56,7 @@ const CreateEventScreen = () => {
       order: 0,
       positionRelativeTo: useRelativePosition ? positionRelativeTo : null,
       positionType: useRelativePosition ? positionType : null,
+      imageUrl: imageUrl || null,
     };
 
     const validation = validateEvent(eventData);
@@ -185,6 +189,31 @@ const CreateEventScreen = () => {
           />
         )}
 
+        <Text style={styles.label}>Hero Image (Optional)</Text>
+        {imageUrl ? (
+          <View style={styles.imageContainer}>
+            <Image source={{ uri: imageUrl }} style={styles.previewImage} />
+            <TouchableOpacity
+              style={styles.removeImageButton}
+              onPress={() => setImageUrl(null)}
+            >
+              <Text style={styles.removeImageText}>Remove Image</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.imagePickerButton}
+            onPress={async () => {
+              const uri = await imageService.showImagePicker();
+              if (uri) {
+                setImageUrl(uri);
+              }
+            }}
+          >
+            <Text style={styles.imagePickerText}>Select Image</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           style={[styles.createButton, loading && styles.createButtonDisabled]}
           onPress={handleCreate}
@@ -303,6 +332,41 @@ const styles = StyleSheet.create({
   createButtonText: {
     color: '#fff',
     fontSize: 18,
+    fontWeight: '600',
+  },
+  imageContainer: {
+    marginVertical: 8,
+  },
+  previewImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: '#f0f0f0',
+  },
+  imagePickerButton: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    backgroundColor: '#fafafa',
+  },
+  imagePickerText: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  removeImageButton: {
+    padding: 8,
+    backgroundColor: '#ffebee',
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  removeImageText: {
+    color: '#FF3B30',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

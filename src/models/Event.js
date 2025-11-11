@@ -8,6 +8,7 @@ class Event {
     this.order = data.order !== undefined ? data.order : 0;
     this.positionRelativeTo = data.positionRelativeTo || null; // ID of event to position before/after
     this.positionType = data.positionType || null; // 'before' or 'after'
+    this.imageUrl = data.imageUrl || null; // Path or URI to hero/cover image
   }
 
   generateId() {
@@ -24,6 +25,7 @@ class Event {
       order: this.order,
       positionRelativeTo: this.positionRelativeTo,
       positionType: this.positionType,
+      imageUrl: this.imageUrl,
     };
   }
 

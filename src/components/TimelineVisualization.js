@@ -6,9 +6,24 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
+import { PinchGestureHandler } from 'react-native-gesture-handler';
+import Animated, {
+  useAnimatedGestureHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import Timeline from 'react-native-timeline-flatlist';
 import timelineService from '../services/timelineService';
-import { transformToTimelineItems, prepareTimelineData } from '../utils/timelineUtils';
+import { 
+  transformToTimelineItems, 
+  prepareTimelineData,
+  filterByZoomLevel,
+  transformForAlternatingTimeline,
+} from '../utils/timelineUtils';
+import { useTimelineZoom } from '../context/TimelineZoomContext';
+import { useTimelineTheme } from '../context/TimelineThemeContext';
+import AlternatingTimeline from './AlternatingTimeline';
 
 const TimelineVisualization = ({
   timelineId,
@@ -31,6 +46,52 @@ const TimelineVisualization = ({
   const [scenes, setScenes] = useState({});
   const [loading, setLoading] = useState(true);
   const [timelineData, setTimelineData] = useState([]);
+  const [viewMode, setViewMode] = useState('simple'); // 'simple' | 'advanced'
+  const [allTimelineItems, setAllTimelineItems] = useState([]);
+  
+  const {
+    zoomLevel,
+    selectedEraId,
+    selectedEventId,
+    zoomIn,
+    zoomInEvent,
+    zoomOut,
+    resetZoom,
+    canZoomOut,
+    canZoomIn,
+  } = useTimelineZoom();
+
+  const { theme, getItemColor, getSymbol } = useTimelineTheme();
+
+  // Pinch gesture for zoom
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+
+  const pinchHandler = useAnimatedGestureHandler({
+    onStart: (_, ctx) => {
+      ctx.startScale = savedScale.value;
+    },
+    onActive: (event, ctx) => {
+      scale.value = ctx.startScale * event.scale;
+    },
+    onEnd: () => {
+      savedScale.value = scale.value;
+      // Reset if scale is too small or too large
+      if (scale.value < 0.5) {
+        scale.value = withSpring(0.5);
+        savedScale.value = 0.5;
+      } else if (scale.value > 2) {
+        scale.value = withSpring(2);
+        savedScale.value = 2;
+      }
+    },
+  });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: scale.value }],
+    };
+  });
 
   useEffect(() => {
     loadTimelineData();
@@ -40,12 +101,25 @@ const TimelineVisualization = ({
     // Transform data whenever eras, events, or scenes change
     if (eras.length > 0 || Object.keys(events).length > 0) {
       const items = transformToTimelineItems(eras, events, scenes, isFictional);
-      const formattedData = prepareTimelineData(items);
-      setTimelineData(formattedData);
+      setAllTimelineItems(items);
+      
+      // Filter based on zoom level
+      const filteredItems = filterByZoomLevel(items, zoomLevel, selectedEraId, selectedEventId);
+      
+      if (viewMode === 'advanced') {
+        // Format for alternating timeline
+        const alternatingData = transformForAlternatingTimeline(filteredItems);
+        setTimelineData(alternatingData);
+      } else {
+        // Format for simple timeline
+        const formattedData = prepareTimelineData(filteredItems);
+        setTimelineData(formattedData);
+      }
     } else {
       setTimelineData([]);
+      setAllTimelineItems([]);
     }
-  }, [eras, events, scenes, isFictional]);
+  }, [eras, events, scenes, isFictional, zoomLevel, selectedEraId, selectedEventId, viewMode]);
 
   const loadTimelineData = async () => {
     try {
@@ -76,26 +150,54 @@ const TimelineVisualization = ({
   };
 
   const handleTimelineEventPress = (event, index) => {
-    const originalData = event._originalData;
+    const originalData = event._originalData || event;
     if (!originalData) return;
 
-    switch (originalData.type) {
+    const itemData = originalData.data || originalData;
+    const itemType = originalData.type || event.type;
+
+    // Handle zoom in for eras and events
+    if (viewMode === 'advanced') {
+      if (itemType === 'era' && zoomLevel === 'eras') {
+        zoomIn(itemData.id);
+        return;
+      } else if (itemType === 'event' && zoomLevel === 'events') {
+        zoomInEvent(itemData.id);
+        return;
+      }
+    }
+
+    // Handle regular press callbacks
+    switch (itemType) {
       case 'era':
         if (onEraPress) {
-          onEraPress(originalData.data);
+          onEraPress(itemData);
         }
         break;
       case 'event':
         if (onEventPress) {
-          onEventPress(originalData.data);
+          onEventPress(itemData);
         }
         break;
       case 'scene':
         if (onScenePress) {
-          onScenePress(originalData.data);
+          onScenePress(itemData);
         }
         break;
     }
+  };
+
+  const getBreadcrumbText = () => {
+    if (zoomLevel === 'eras') return 'Eras';
+    if (zoomLevel === 'events') {
+      const era = eras.find(e => e.id === selectedEraId);
+      return era ? `Events: ${era.title}` : 'Events';
+    }
+    if (zoomLevel === 'scenes') {
+      const event = Object.values(events).flat().find(e => e.id === selectedEventId);
+      return event ? `Scenes: ${event.title}` : 'Scenes';
+    }
+    return 'Timeline';
   };
 
   const handleEraDelete = async (era) => {
@@ -230,30 +332,83 @@ const TimelineVisualization = ({
 
   return (
     <View style={styles.container}>
-      <Timeline
-        data={timelineData}
-        circleSize={20}
-        timeContainerStyle={{ minWidth: 100, maxWidth: 100 }}
-        timeStyle={styles.timeStyle}
-        descriptionStyle={styles.descriptionStyle}
-        titleStyle={styles.titleStyle}
-        detailContainerStyle={styles.detailContainer}
-        onEventPress={handleTimelineEventPress}
-        renderDetail={renderDetail}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={loadTimelineData} />
-        }
-        ListFooterComponent={
-          onAddEra ? (
-            <TouchableOpacity style={styles.addButton} onPress={onAddEra}>
-              <Text style={styles.addButtonText}>+ Add Era</Text>
+      {/* Zoom Controls and View Toggle */}
+      <View style={styles.controlsBar}>
+        <View style={styles.zoomControls}>
+          <Text style={styles.breadcrumb}>{getBreadcrumbText()}</Text>
+          {canZoomOut && (
+            <TouchableOpacity style={styles.zoomButton} onPress={zoomOut}>
+              <Text style={styles.zoomButtonText}>← Back</Text>
             </TouchableOpacity>
-          ) : null
-        }
-        options={{
-          style: { paddingTop: 5, paddingLeft: 5, paddingRight: 5 },
-        }}
-      />
+          )}
+          {zoomLevel !== 'eras' && (
+            <TouchableOpacity style={styles.zoomButton} onPress={resetZoom}>
+              <Text style={styles.zoomButtonText}>Reset</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity
+          style={styles.viewToggle}
+          onPress={() => setViewMode(viewMode === 'simple' ? 'advanced' : 'simple')}
+        >
+          <Text style={styles.viewToggleText}>
+            {viewMode === 'simple' ? 'Advanced' : 'Simple'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+            {/* Timeline Content */}
+            <PinchGestureHandler onGestureEvent={pinchHandler} enabled={viewMode === 'advanced'}>
+              <Animated.View style={[styles.timelineContainer, viewMode === 'advanced' && animatedStyle]}>
+                {viewMode === 'advanced' ? (
+            <AlternatingTimeline
+              data={timelineData}
+              onItemPress={handleTimelineEventPress}
+              onRefresh={loadTimelineData}
+              refreshing={loading}
+              lineColor={theme.lineColor}
+              lineWidth={theme.spacing.line}
+              colors={theme.itemColors}
+              symbols={theme.symbols}
+              showImages={true}
+              fontSizes={theme.fontSizes}
+              spacing={theme.spacing}
+              footerComponent={
+                onAddEra ? (
+                  <TouchableOpacity style={styles.addButton} onPress={onAddEra}>
+                    <Text style={styles.addButtonText}>+ Add Era</Text>
+                  </TouchableOpacity>
+                ) : null
+              }
+            />
+          ) : (
+            <Timeline
+              data={timelineData}
+              circleSize={20}
+              timeContainerStyle={{ minWidth: 100, maxWidth: 100 }}
+              timeStyle={[styles.timeStyle, { backgroundColor: theme.lineColor }]}
+              descriptionStyle={[styles.descriptionStyle, { fontSize: theme.fontSizes.description }]}
+              titleStyle={[styles.titleStyle, { fontSize: theme.fontSizes.title }]}
+              detailContainerStyle={styles.detailContainer}
+              onEventPress={handleTimelineEventPress}
+              renderDetail={renderDetail}
+              refreshControl={
+                <RefreshControl refreshing={loading} onRefresh={loadTimelineData} />
+              }
+              ListFooterComponent={
+                onAddEra ? (
+                  <TouchableOpacity style={styles.addButton} onPress={onAddEra}>
+                    <Text style={styles.addButtonText}>+ Add Era</Text>
+                  </TouchableOpacity>
+                ) : null
+              }
+              options={{
+                style: { paddingTop: 5, paddingLeft: 5, paddingRight: 5 },
+              }}
+                  />
+                )}
+              </Animated.View>
+            </PinchGestureHandler>
     </View>
   );
 };
@@ -262,6 +417,53 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  controlsBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  zoomControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  breadcrumb: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginRight: 12,
+  },
+  zoomButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#007AFF',
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  zoomButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  viewToggle: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 6,
+  },
+  viewToggleText: {
+    color: '#007AFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  timelineContainer: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
@@ -287,11 +489,9 @@ const styles = StyleSheet.create({
   },
   timeStyle: {
     textAlign: 'center',
-    backgroundColor: '#007AFF',
     color: 'white',
     padding: 5,
     borderRadius: 13,
-    fontSize: 12,
   },
   descriptionStyle: {
     color: '#666',

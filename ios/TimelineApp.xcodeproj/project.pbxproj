@@ -8,22 +8,22 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		5B74F096A39DA6A699E2AC73 /* libPods-TimelineApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5289E2BE1159BEBB3B879114 /* libPods-TimelineApp.a */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		943205BAECFA5DD05B858CE3 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
-		C437D9FAF771553F0165365D /* libPods-TimelineApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 03D185FBC4F7C8E246276E5B /* libPods-TimelineApp.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		03D185FBC4F7C8E246276E5B /* libPods-TimelineApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-TimelineApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07F961A680F5B00A75B9A /* TimelineApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TimelineApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = TimelineApp/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = TimelineApp/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = TimelineApp/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		2B5BB2FC9C6E86D7D0A3DE74 /* Pods-TimelineApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TimelineApp.release.xcconfig"; path = "Target Support Files/Pods-TimelineApp/Pods-TimelineApp.release.xcconfig"; sourceTree = "<group>"; };
+		5289E2BE1159BEBB3B879114 /* libPods-TimelineApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-TimelineApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5FC2513CD34082C1150A8775 /* Pods-TimelineApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TimelineApp.release.xcconfig"; path = "Target Support Files/Pods-TimelineApp/Pods-TimelineApp.release.xcconfig"; sourceTree = "<group>"; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = TimelineApp/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = TimelineApp/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		CE89A24F07F5AE6FFDB0A060 /* Pods-TimelineApp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TimelineApp.debug.xcconfig"; path = "Target Support Files/Pods-TimelineApp/Pods-TimelineApp.debug.xcconfig"; sourceTree = "<group>"; };
+		E0B4D6CB4A762B201E190AFB /* Pods-TimelineApp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TimelineApp.debug.xcconfig"; path = "Target Support Files/Pods-TimelineApp/Pods-TimelineApp.debug.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -32,7 +32,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C437D9FAF771553F0165365D /* libPods-TimelineApp.a in Frameworks */,
+				5B74F096A39DA6A699E2AC73 /* libPods-TimelineApp.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -55,7 +55,7 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				03D185FBC4F7C8E246276E5B /* libPods-TimelineApp.a */,
+				5289E2BE1159BEBB3B879114 /* libPods-TimelineApp.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -92,8 +92,8 @@
 		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				CE89A24F07F5AE6FFDB0A060 /* Pods-TimelineApp.debug.xcconfig */,
-				2B5BB2FC9C6E86D7D0A3DE74 /* Pods-TimelineApp.release.xcconfig */,
+				E0B4D6CB4A762B201E190AFB /* Pods-TimelineApp.debug.xcconfig */,
+				5FC2513CD34082C1150A8775 /* Pods-TimelineApp.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -105,13 +105,13 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "TimelineApp" */;
 			buildPhases = (
-				A81ED3488FF43B9F3951A18B /* [CP] Check Pods Manifest.lock */,
+				DE08CD7AA38D89EEEEAE1D13 /* [CP] Check Pods Manifest.lock */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
-				7A66E3920A6DCD4F5228F9C9 /* [CP] Embed Pods Frameworks */,
-				9E18845334E9B16D078C40C2 /* [CP] Copy Pods Resources */,
+				74A0A53286AF8DEA4C9A7A22 /* [CP] Embed Pods Frameworks */,
+				47890554BE492F2CB271F74D /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -183,24 +183,7 @@
 			shellPath = /bin/sh;
 			shellScript = "set -e\n\nWITH_ENVIRONMENT=\"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\nREACT_NATIVE_XCODE=\"$REACT_NATIVE_PATH/scripts/react-native-xcode.sh\"\n\n/bin/sh -c \"$WITH_ENVIRONMENT $REACT_NATIVE_XCODE\"\n";
 		};
-		7A66E3920A6DCD4F5228F9C9 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-TimelineApp/Pods-TimelineApp-frameworks-${CONFIGURATION}-input-files.xcfilelist",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-TimelineApp/Pods-TimelineApp-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-TimelineApp/Pods-TimelineApp-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		9E18845334E9B16D078C40C2 /* [CP] Copy Pods Resources */ = {
+		47890554BE492F2CB271F74D /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -217,7 +200,24 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-TimelineApp/Pods-TimelineApp-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		A81ED3488FF43B9F3951A18B /* [CP] Check Pods Manifest.lock */ = {
+		74A0A53286AF8DEA4C9A7A22 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-TimelineApp/Pods-TimelineApp-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-TimelineApp/Pods-TimelineApp-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-TimelineApp/Pods-TimelineApp-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		DE08CD7AA38D89EEEEAE1D13 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -255,7 +255,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = CE89A24F07F5AE6FFDB0A060 /* Pods-TimelineApp.debug.xcconfig */;
+			baseConfigurationReference = E0B4D6CB4A762B201E190AFB /* Pods-TimelineApp.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -283,7 +283,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 2B5BB2FC9C6E86D7D0A3DE74 /* Pods-TimelineApp.release.xcconfig */;
+			baseConfigurationReference = 5FC2513CD34082C1150A8775 /* Pods-TimelineApp.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

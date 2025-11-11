@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useApp } from '../context/AppContext';
+import { TimelineZoomProvider } from '../context/TimelineZoomContext';
 import TimelineVisualization from '../components/TimelineVisualization';
 import timelineService from '../services/timelineService';
 
@@ -39,15 +40,23 @@ const TimelineDetailScreen = () => {
   useEffect(() => {
     loadTimeline();
     
-    // Add header button to create era
+    // Add header buttons
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity
-          onPress={handleAddEra}
-          style={styles.headerButton}
-        >
-          <Text style={styles.headerButtonText}>+ Add Era</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('TimelineSettings')}
+            style={[styles.headerButton, styles.settingsButton]}
+          >
+            <Text style={styles.settingsButtonText}>⚙️</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleAddEra}
+            style={styles.headerButton}
+          >
+            <Text style={styles.headerButtonText}>+ Add Era</Text>
+          </TouchableOpacity>
+        </View>
       ),
     });
   }, [timelineId, navigation, handleAddEra]);
@@ -140,31 +149,33 @@ const TimelineDetailScreen = () => {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{timeline.title}</Text>
-        {timeline.description && (
-          <Text style={styles.description}>{timeline.description}</Text>
-        )}
-        <Text style={styles.type}>
-          {timeline.isFictional ? '📚 Fictional Timeline' : '📅 Historical Timeline'}
-        </Text>
+    <TimelineZoomProvider>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{timeline.title}</Text>
+          {timeline.description && (
+            <Text style={styles.description}>{timeline.description}</Text>
+          )}
+          <Text style={styles.type}>
+            {timeline.isFictional ? '📚 Fictional Timeline' : '📅 Historical Timeline'}
+          </Text>
+        </View>
+        <TimelineVisualization
+          key={`timeline-${timelineId}-${refreshKey}`}
+          timelineId={timelineId}
+          isFictional={timeline.isFictional}
+          onAddEra={handleAddEra}
+          onAddEvent={handleAddEvent}
+          onAddScene={handleAddScene}
+          onEraEdit={handleEraEdit}
+          onEventEdit={handleEventEdit}
+          onSceneEdit={handleSceneEdit}
+          onEraDelete={handleEraDelete}
+          onEventDelete={handleEventDelete}
+          onSceneDelete={handleSceneDelete}
+        />
       </View>
-      <TimelineVisualization
-        key={`timeline-${timelineId}-${refreshKey}`}
-        timelineId={timelineId}
-        isFictional={timeline.isFictional}
-        onAddEra={handleAddEra}
-        onAddEvent={handleAddEvent}
-        onAddScene={handleAddScene}
-        onEraEdit={handleEraEdit}
-        onEventEdit={handleEventEdit}
-        onSceneEdit={handleSceneEdit}
-        onEraDelete={handleEraDelete}
-        onEventDelete={handleEventDelete}
-        onSceneDelete={handleSceneDelete}
-      />
-    </View>
+    </TimelineZoomProvider>
   );
 };
 
@@ -204,17 +215,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
   },
-  headerButton: {
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginRight: 16,
+  },
+  headerButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     backgroundColor: '#007AFF',
     borderRadius: 6,
   },
+  settingsButton: {
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 10,
+  },
   headerButtonText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  settingsButtonText: {
+    color: '#333',
+    fontSize: 18,
   },
 });
 

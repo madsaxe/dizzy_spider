@@ -317,6 +317,9 @@ PODS:
     - glog
   - react-native-date-picker (4.4.2):
     - React-Core
+  - react-native-image-picker (8.2.1):
+    - RCT-Folly (= 2021.07.22.00)
+    - React-Core
   - react-native-safe-area-context (4.14.1):
     - React-Core
   - React-NativeModulesApple (0.72.6):
@@ -434,35 +437,10 @@ PODS:
   - RNGestureHandler (2.29.1):
     - RCT-Folly (= 2021.07.22.00)
     - React-Core
-  - RNReanimated (3.3.0):
-    - DoubleConversion
-    - FBLazyVector
-    - glog
-    - hermes-engine
-    - RCT-Folly
-    - RCTRequired
-    - RCTTypeSafety
-    - React-callinvoker
+  - RNReanimated (3.10.1):
+    - RCT-Folly (= 2021.07.22.00)
     - React-Core
-    - React-Core/DevSupport
-    - React-Core/RCTWebSocket
-    - React-CoreModules
-    - React-cxxreact
-    - React-hermes
-    - React-jsi
-    - React-jsiexecutor
-    - React-jsinspector
-    - React-RCTActionSheet
-    - React-RCTAnimation
-    - React-RCTAppDelegate
-    - React-RCTBlob
-    - React-RCTImage
-    - React-RCTLinking
-    - React-RCTNetwork
-    - React-RCTSettings
-    - React-RCTText
     - ReactCommon/turbomodule/core
-    - Yoga
   - RNScreens (3.37.0):
     - RCT-Folly (= 2021.07.22.00)
     - React-Core
@@ -498,6 +476,7 @@ DEPENDENCIES:
   - React-jsinspector (from `../node_modules/react-native/ReactCommon/jsinspector`)
   - React-logger (from `../node_modules/react-native/ReactCommon/logger`)
   - react-native-date-picker (from `../node_modules/react-native-date-picker`)
+  - react-native-image-picker (from `../node_modules/react-native-image-picker`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-perflogger (from `../node_modules/react-native/ReactCommon/reactperflogger`)
@@ -575,6 +554,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/logger"
   react-native-date-picker:
     :path: "../node_modules/react-native-date-picker"
+  react-native-image-picker:
+    :path: "../node_modules/react-native-image-picker"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   React-NativeModulesApple:
@@ -649,6 +630,7 @@ SPEC CHECKSUMS:
   React-jsinspector: 194e32c6aab382d88713ad3dd0025c5f5c4ee072
   React-logger: 39440454dfd719978689203a9d18b94e98de09eb
   react-native-date-picker: 5ddb34db03afc527bc07777952c2ac72fa384411
+  react-native-image-picker: 2c5cb28d24f5a3abc6e58652dd717aa80d38b82f
   react-native-safe-area-context: 758e894ca5a9bd1868d2a9cfbca7326a2b6bf9dc
   React-NativeModulesApple: 90508a0d94b0b66bb2ba14bc3bef65a00f5a8efb
   React-perflogger: e3596db7e753f51766bceadc061936ef1472edc3
@@ -669,7 +651,7 @@ SPEC CHECKSUMS:
   ReactCommon: 2060ee7b68e71d23849968f6406550ba2df71bdb
   RNCAsyncStorage: b6410dead2732b5c72a7fdb1ecb5651bbcf4674b
   RNGestureHandler: c6ba19234b4ffafd2bf3f62c09dc74793a06d2e0
-  RNReanimated: 66b73d76033ee90993b08707aea68416eae2ebc5
+  RNReanimated: f6f47ab6afca5c924255917beda5edc7e9dafe41
   RNScreens: c1a851e518284641160aa5af4894479773a6e719
   RNVectorIcons: 2a7ec3ea0e8af048e16f8d30bfaedc21d649c502
   SocketRocket: f32cd54efbe0f095c4d7594881e52619cfe80b17

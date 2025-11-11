@@ -1,78 +1,76 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { formatTime, formatTimeRange } from '../utils/timeUtils';
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
 
 const TimelineItem = ({
   item,
-  type, // 'era', 'event', 'scene'
+  side = 'left', // 'left' or 'right'
   onPress,
-  onEdit,
-  onDelete,
-  isFictional = false,
-  level = 0, // Indentation level
+  colors = {},
+  symbol = null,
+  showImage = true,
+  fontSizes = { title: 16, description: 14, time: 12 },
 }) => {
-  const getItemColor = () => {
-    switch (type) {
-      case 'era':
-        return '#4A90E2';
-      case 'event':
-        return '#50C878';
-      case 'scene':
-        return '#FF6B6B';
-      default:
-        return '#999';
-    }
-  };
+  const {
+    title,
+    description,
+    time,
+    imageUrl,
+    type,
+  } = item;
 
-  const getTimeDisplay = () => {
-    if (type === 'era') {
-      return formatTimeRange(item.startTime, item.endTime, isFictional);
-    }
-    return formatTime(item.time, isFictional);
-  };
-
-  const marginLeft = level * 20;
+  const itemColor = colors[type] || colors.default || '#007AFF';
+  const isLeft = side === 'left';
 
   return (
     <TouchableOpacity
-      style={[styles.container, { marginLeft, borderLeftColor: getItemColor() }]}
+      style={[
+        styles.container,
+        isLeft ? styles.leftContainer : styles.rightContainer,
+      ]}
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: getItemColor() }]}>{item.title}</Text>
-          <View style={styles.actions}>
-            {onEdit && (
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onEdit();
-                }}
-              >
-                <Text style={styles.actionText}>Edit</Text>
-              </TouchableOpacity>
-            )}
-            {onDelete && (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onDelete();
-                }}
-              >
-                <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-        {item.description && (
-          <Text style={styles.description} numberOfLines={2}>
-            {item.description}
-          </Text>
+      <View
+        style={[
+          styles.content,
+          { borderColor: itemColor },
+          isLeft ? styles.leftContent : styles.rightContent,
+        ]}
+      >
+        {/* Hero Image */}
+        {showImage && imageUrl && (
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.heroImage}
+            resizeMode="cover"
+          />
         )}
-        <Text style={styles.time}>{getTimeDisplay()}</Text>
+
+        {/* Symbol/Icon */}
+        {symbol && (
+          <View style={[styles.symbolContainer, { backgroundColor: itemColor }]}>
+            <Text style={styles.symbol}>{symbol}</Text>
+          </View>
+        )}
+
+        {/* Content */}
+        <View style={styles.textContainer}>
+          {time && (
+            <Text style={[styles.time, { color: itemColor, fontSize: fontSizes.time }]}>{time}</Text>
+          )}
+          <Text style={[styles.title, { fontSize: fontSizes.title }]}>{title}</Text>
+          {description && (
+            <Text style={[styles.description, { fontSize: fontSizes.description }]} numberOfLines={3}>
+              {description}
+            </Text>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -80,63 +78,72 @@ const TimelineItem = ({
 
 const styles = StyleSheet.create({
   container: {
-    borderLeftWidth: 4,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    marginVertical: 6,
-    padding: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    width: '45%',
+    marginVertical: 12,
+  },
+  leftContainer: {
+    alignItems: 'flex-end',
+    paddingRight: 8,
+  },
+  rightContainer: {
+    alignItems: 'flex-start',
+    paddingLeft: 8,
   },
   content: {
-    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 2,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    minHeight: 120,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  leftContent: {
+    borderRightWidth: 4,
+  },
+  rightContent: {
+    borderLeftWidth: 4,
+  },
+  heroImage: {
+    width: '100%',
+    height: 150,
+    backgroundColor: '#f0f0f0',
+  },
+  symbolContainer: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 1,
+  },
+  symbol: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  textContainer: {
+    padding: 12,
+  },
+  time: {
+    fontWeight: '600',
     marginBottom: 4,
   },
   title: {
-    fontSize: 18,
     fontWeight: '700',
-    flex: 1,
-  },
-  actions: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginLeft: 8,
-    borderRadius: 4,
-    backgroundColor: '#f0f0f0',
-  },
-  deleteButton: {
-    backgroundColor: '#ffebee',
-  },
-  actionText: {
-    fontSize: 12,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  deleteText: {
-    color: '#FF3B30',
+    color: '#333',
+    marginBottom: 6,
   },
   description: {
-    fontSize: 14,
     color: '#666',
-    marginBottom: 8,
-  },
-  time: {
-    fontSize: 12,
-    color: '#999',
-    fontStyle: 'italic',
+    lineHeight: 20,
   },
 });
 
 export default TimelineItem;
-

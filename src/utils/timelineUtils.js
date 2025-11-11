@@ -155,3 +155,52 @@ export const prepareTimelineData = (timelineItems) => {
   return timelineItems.map(formatForTimelineComponent);
 };
 
+/**
+ * Filter timeline items based on zoom level
+ * @param {Array} items - Timeline items from transformToTimelineItems
+ * @param {string} zoomLevel - 'eras' | 'events' | 'scenes'
+ * @param {string|null} selectedEraId - Selected era ID for events view
+ * @param {string|null} selectedEventId - Selected event ID for scenes view
+ * @returns {Array} Filtered timeline items
+ */
+export const filterByZoomLevel = (items, zoomLevel, selectedEraId = null, selectedEventId = null) => {
+  if (zoomLevel === 'eras') {
+    // Show only eras
+    return items.filter(item => item.type === 'era');
+  } else if (zoomLevel === 'events') {
+    // Show only events for selected era
+    if (!selectedEraId) return [];
+    return items.filter(item => 
+      item.type === 'event' && item.eraId === selectedEraId
+    );
+  } else if (zoomLevel === 'scenes') {
+    // Show only scenes for selected event
+    if (!selectedEventId) return [];
+    return items.filter(item => 
+      item.type === 'scene' && item.eventId === selectedEventId
+    );
+  }
+  return items;
+};
+
+/**
+ * Transform items for alternating timeline layout
+ * @param {Array} items - Timeline items
+ * @returns {Array} Items formatted for AlternatingTimeline
+ */
+export const transformForAlternatingTimeline = (items) => {
+  return items.map(item => {
+    const data = item.data || item;
+    return {
+      ...item,
+      id: item.id || data.id,
+      time: item.timeDisplay || item.time || 'No time specified',
+      imageUrl: data.imageUrl || item.imageUrl || null,
+      _originalData: {
+        type: item.type,
+        data: data,
+      },
+    };
+  });
+};
+

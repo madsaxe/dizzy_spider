@@ -9,6 +9,7 @@ class Era {
     this.order = data.order !== undefined ? data.order : 0;
     this.positionRelativeTo = data.positionRelativeTo || null; // ID of era to position after
     this.positionType = data.positionType || null; // 'after' (only option for eras)
+    this.imageUrl = data.imageUrl || null; // Path or URI to hero/cover image
   }
 
   generateId() {
@@ -26,6 +27,7 @@ class Era {
       order: this.order,
       positionRelativeTo: this.positionRelativeTo,
       positionType: this.positionType,
+      imageUrl: this.imageUrl,
     };
   }
 
