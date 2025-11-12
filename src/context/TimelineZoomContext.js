@@ -12,21 +12,69 @@ export const useTimelineZoom = () => {
 
 export const TimelineZoomProvider = ({ children }) => {
   const [zoomLevel, setZoomLevel] = useState('eras'); // 'eras' | 'events' | 'scenes'
-  const [selectedEraId, setSelectedEraId] = useState(null);
-  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [selectedEraIds, setSelectedEraIds] = useState(new Set()); // Set of selected Era IDs
+  const [selectedEventIds, setSelectedEventIds] = useState(new Set()); // Set of selected Event IDs
   const [zoomHistory, setZoomHistory] = useState([]);
 
+  // Helper to convert Set to Array for backward compatibility
+  const selectedEraId = selectedEraIds.size > 0 ? Array.from(selectedEraIds)[0] : null;
+  const selectedEventId = selectedEventIds.size > 0 ? Array.from(selectedEventIds)[0] : null;
+
+  const toggleEra = useCallback((eraId) => {
+    setSelectedEraIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(eraId)) {
+        newSet.delete(eraId);
+      } else {
+        newSet.add(eraId);
+      }
+      // If we have any selected Eras, we're at events level
+      if (newSet.size > 0 && zoomLevel === 'eras') {
+        setZoomLevel('events');
+      } else if (newSet.size === 0 && zoomLevel === 'events') {
+        setZoomLevel('eras');
+      }
+      return newSet;
+    });
+  }, [zoomLevel]);
+
+  const toggleEvent = useCallback((eventId) => {
+    setSelectedEventIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(eventId)) {
+        newSet.delete(eventId);
+      } else {
+        newSet.add(eventId);
+      }
+      // If we have any selected Events, we're at scenes level
+      if (newSet.size > 0 && zoomLevel === 'events') {
+        setZoomLevel('scenes');
+      } else if (newSet.size === 0 && zoomLevel === 'scenes') {
+        setZoomLevel('events');
+      }
+      return newSet;
+    });
+  }, [zoomLevel]);
+
   const zoomIn = useCallback((eraId) => {
-    setZoomHistory((prev) => [...prev, { level: zoomLevel, eraId: selectedEraId, eventId: selectedEventId }]);
-    setSelectedEraId(eraId);
+    setZoomHistory((prev) => [...prev, { level: zoomLevel, eraIds: Array.from(selectedEraIds), eventIds: Array.from(selectedEventIds) }]);
+    setSelectedEraIds((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(eraId);
+      return newSet;
+    });
     setZoomLevel('events');
-  }, [zoomLevel, selectedEraId, selectedEventId]);
+  }, [zoomLevel, selectedEraIds, selectedEventIds]);
 
   const zoomInEvent = useCallback((eventId) => {
-    setZoomHistory((prev) => [...prev, { level: zoomLevel, eraId: selectedEraId, eventId: selectedEventId }]);
-    setSelectedEventId(eventId);
+    setZoomHistory((prev) => [...prev, { level: zoomLevel, eraIds: Array.from(selectedEraIds), eventIds: Array.from(selectedEventIds) }]);
+    setSelectedEventIds((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(eventId);
+      return newSet;
+    });
     setZoomLevel('scenes');
-  }, [zoomLevel, selectedEraId, selectedEventId]);
+  }, [zoomLevel, selectedEraIds, selectedEventIds]);
 
   const zoomOut = useCallback(() => {
     if (zoomHistory.length === 0) {
@@ -37,14 +85,14 @@ export const TimelineZoomProvider = ({ children }) => {
     const previous = zoomHistory[zoomHistory.length - 1];
     setZoomHistory((prev) => prev.slice(0, -1));
     setZoomLevel(previous.level);
-    setSelectedEraId(previous.eraId || null);
-    setSelectedEventId(previous.eventId || null);
+    setSelectedEraIds(new Set(previous.eraIds || []));
+    setSelectedEventIds(new Set(previous.eventIds || []));
   }, [zoomHistory]);
 
   const resetZoom = useCallback(() => {
     setZoomLevel('eras');
-    setSelectedEraId(null);
-    setSelectedEventId(null);
+    setSelectedEraIds(new Set());
+    setSelectedEventIds(new Set());
     setZoomHistory([]);
   }, []);
 
@@ -53,11 +101,15 @@ export const TimelineZoomProvider = ({ children }) => {
 
   const value = {
     zoomLevel,
-    selectedEraId,
-    selectedEventId,
+    selectedEraId, // Backward compatibility - first selected Era
+    selectedEraIds, // Set of all selected Era IDs
+    selectedEventId, // Backward compatibility - first selected Event
+    selectedEventIds, // Set of all selected Event IDs
     zoomHistory,
     zoomIn,
     zoomInEvent,
+    toggleEra,
+    toggleEvent,
     zoomOut,
     resetZoom,
     canZoomOut,

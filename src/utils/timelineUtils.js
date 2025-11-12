@@ -165,6 +165,13 @@ export const prepareTimelineData = (timelineItems) => {
     }
     // Ensure type is included for CardStack
     formatted.type = item.type;
+    // Preserve eraId and eventId for filtering and parent tracking
+    if (item.eraId) {
+      formatted.eraId = item.eraId;
+    }
+    if (item.eventId) {
+      formatted.eventId = item.eventId;
+    }
     return formatted;
   });
 };

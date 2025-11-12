@@ -63,7 +63,11 @@ const TimelineVisualization = forwardRef(({
   const {
     zoomLevel,
     selectedEraId,
+    selectedEraIds,
     selectedEventId,
+    selectedEventIds,
+    toggleEra,
+    toggleEvent,
     zoomIn,
     zoomInEvent,
     zoomOut,
@@ -214,7 +218,31 @@ const TimelineVisualization = forwardRef(({
       setAllTimelineItems(items);
       
       // Filter based on zoom level
-      const filteredItems = filterByZoomLevel(items, zoomLevel, selectedEraId, selectedEventId);
+      // For H-shape layout (simple view), include parent items so they remain visible
+      let filteredItems;
+      if (viewMode === 'simple') {
+        // H-shape: show all levels simultaneously
+        if (zoomLevel === 'events') {
+          // Show all Eras + Events for all selected Eras
+          filteredItems = items.filter(item => 
+            item.type === 'era' || 
+            (item.type === 'event' && selectedEraIds.has(item.eraId))
+          );
+        } else if (zoomLevel === 'scenes') {
+          // Show all Eras + Events for all selected Eras + Scenes for all selected Events
+          filteredItems = items.filter(item => 
+            item.type === 'era' || 
+            (item.type === 'event' && selectedEraIds.has(item.eraId)) ||
+            (item.type === 'scene' && selectedEventIds.has(item.eventId))
+          );
+        } else {
+          // Show only Eras
+          filteredItems = items.filter(item => item.type === 'era');
+        }
+      } else {
+        // Advanced view: use standard filtering
+        filteredItems = filterByZoomLevel(items, zoomLevel, selectedEraId, selectedEventId);
+      }
       
       if (viewMode === 'advanced') {
         // Format for alternating timeline
@@ -266,25 +294,85 @@ const TimelineVisualization = forwardRef(({
     const itemData = originalData.data || originalData;
     const itemType = originalData.type || event.type;
 
-    // Handle zoom in for eras and events
-    if (itemType === 'era' && zoomLevel === 'eras') {
+    // Handle toggle behavior for Eras
+    if (itemType === 'era') {
+      const isCurrentlySelected = selectedEraIds.has(itemData.id);
+      
+      // If clicking an Era that's already selected, toggle it off
+      if (isCurrentlySelected) {
+        if (viewMode === 'advanced') {
+          // For advanced view, we need to handle zoom out if this was the only selected Era
+          if (selectedEraIds.size === 1) {
+            pendingZoomAction.current = { type: 'zoomOut' };
+            setRefreshKey(prev => prev + 1);
+          } else {
+            toggleEra(itemData.id);
+          }
+        } else {
+          toggleEra(itemData.id);
+        }
+        return;
+      }
+      
+      // If clicking a new Era, check for overlap with existing Scenes
+      if (zoomLevel === 'scenes' && selectedEventIds.size > 0) {
+        // Get all Events for this Era
+        const eraEvents = events[itemData.id] || [];
+        // Get all Events that have Scenes visible
+        const eventsWithScenes = Array.from(selectedEventIds);
+        // Check if any of the new Era's Events would overlap with existing Scenes
+        // (Events from the same Era would be at the same X positions)
+        // For now, we'll remove all Events that have Scenes visible if they're from a different Era
+        // This is a simple approach - we could make it more sophisticated later
+        const overlappingEventIds = eventsWithScenes.filter(eventId => {
+          const event = Object.values(events).flat().find(e => e.id === eventId);
+          return event && event.eraId !== itemData.id;
+        });
+        
+        // Remove overlapping Events from selection
+        if (overlappingEventIds.length > 0) {
+          overlappingEventIds.forEach(eventId => {
+            toggleEvent(eventId);
+          });
+        }
+      }
+      
+      // Toggle the Era (add it to selection)
       if (viewMode === 'advanced') {
-        // Advanced view: Store pending zoom action and trigger transition animation
         pendingZoomAction.current = { type: 'zoomIn', eraId: itemData.id };
         setRefreshKey(prev => prev + 1);
       } else {
-        // Simple view: Execute zoom immediately without animation
-        zoomIn(itemData.id);
+        toggleEra(itemData.id);
       }
       return;
-    } else if (itemType === 'event' && zoomLevel === 'events') {
+    }
+    
+    // Handle toggle behavior for Events
+    if (itemType === 'event') {
+      const isCurrentlySelected = selectedEventIds.has(itemData.id);
+      
+      // If clicking an Event that's already selected, toggle it off
+      if (isCurrentlySelected) {
+        if (viewMode === 'advanced') {
+          // For advanced view, we need to handle zoom out if this was the only selected Event
+          if (selectedEventIds.size === 1) {
+            pendingZoomAction.current = { type: 'zoomOut' };
+            setRefreshKey(prev => prev + 1);
+          } else {
+            toggleEvent(itemData.id);
+          }
+        } else {
+          toggleEvent(itemData.id);
+        }
+        return;
+      }
+      
+      // Toggle the Event (add it to selection)
       if (viewMode === 'advanced') {
-        // Advanced view: Store pending zoom action and trigger transition animation
         pendingZoomAction.current = { type: 'zoomInEvent', eventId: itemData.id };
         setRefreshKey(prev => prev + 1);
       } else {
-        // Simple view: Execute zoom immediately without animation
-        zoomInEvent(itemData.id);
+        toggleEvent(itemData.id);
       }
       return;
     }
@@ -538,7 +626,9 @@ const TimelineVisualization = forwardRef(({
                   scenes={scenes}
                   zoomLevel={zoomLevel}
                   selectedEraId={selectedEraId}
+                  selectedEraIds={selectedEraIds}
                   selectedEventId={selectedEventId}
+                  selectedEventIds={selectedEventIds}
                 />
               )}
             </View>

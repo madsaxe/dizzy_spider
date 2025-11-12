@@ -9,8 +9,6 @@ import {
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withTiming,
-  Easing,
 } from 'react-native-reanimated';
 import HexagonNode, { HEXAGON_SIZE } from './HexagonNode';
 
@@ -36,7 +34,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingBottom: 32,
     paddingHorizontal: 16,
-    alignItems: 'center',
+    alignItems: 'flex-start', // Align Eras to the left, canvas expands to the right for Events
   },
   horizontalContentContainer: {
     paddingVertical: 16,
@@ -47,17 +45,25 @@ const styles = StyleSheet.create({
   },
   itemContainer: {
     position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'flex-start', // Align hexagon nodes to the left
+    justifyContent: 'flex-start',
   },
   verticalItem: {
     width: '100%',
-    alignItems: 'center',
+    alignItems: 'flex-start', // Align Era nodes to the left
+    position: 'relative', // Enable absolute positioning for Events/Scenes
+    // Ensure Era nodes don't expand when children are added
+    alignSelf: 'flex-start', // Prevent stretching
   },
   horizontalItem: {
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0, // Prevent items from shrinking in horizontal layout
+    position: 'absolute', // Events positioned absolutely to the right of Era
+  },
+  sceneItem: {
+    position: 'absolute', // Scenes positioned absolutely below Event
+    alignItems: 'center',
   },
   stackedNodesWrapper: {
     position: 'absolute',
@@ -144,6 +150,8 @@ const AnimatedHexagonItem = ({
   isVerticalLayout,
   zoomLevel,
   sharedValuesRef, // Ref to store shared values map
+  parentPositionsRef, // Ref to store parent positions
+  parentId, // ID of parent node (for Events: eraId, for Scenes: eventId)
   formattedItem,
   onItemPress,
   onItemEdit,
@@ -151,9 +159,15 @@ const AnimatedHexagonItem = ({
   showImages,
   fontSizes,
   renderStackedNodes,
+  allData, // All data items for calculating parent positions
+  selectedEraId, // Selected era ID for filtering (backward compatibility)
+  selectedEraIds, // Set of selected era IDs
+  selectedEventId, // Selected event ID for filtering (backward compatibility)
+  selectedEventIds, // Set of selected event IDs
+  positionsUpdateKey, // Key to force re-render when positions change
 }) => {
   // Create shared values for each item component instance at the top level
-  // These are created unconditionally to follow React hook rules
+  // Simplified: no animations, just static positioning
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -181,25 +195,205 @@ const AnimatedHexagonItem = ({
   }, [itemId, translateX, translateY, opacity, scale, sharedValuesRef]);
   
   // Create animated style at the top level of this component
+  // For Events/Scenes with absolute positioning, we don't need transforms
+  const needsTransform = !((zoomLevel === 'events' || zoomLevel === 'scenes') && (itemType === 'event' || itemType === 'scene') && parentId);
+  
   const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateX: translateX.value },
-        { translateY: translateY.value },
-        { scale: scale.value },
-      ],
-      opacity: opacity.value,
-    };
-  }, [translateX, translateY, opacity, scale]);
+    if (needsTransform) {
+      return {
+        transform: [
+          { translateX: translateX.value },
+          { translateY: translateY.value },
+          { scale: scale.value },
+        ],
+        opacity: opacity.value,
+      };
+    } else {
+      // For absolutely positioned Events/Scenes, only apply opacity and scale
+      return {
+        opacity: opacity.value,
+        transform: [{ scale: scale.value }],
+      };
+    }
+  }, [translateX, translateY, opacity, scale, needsTransform]);
+
+  // Handle layout measurement to track parent positions
+  // For Eras, measure the container but use HEXAGON_SIZE for width (not measured width)
+  // For Events/Scenes, measure normally
+  const handleLayout = useCallback((event) => {
+    if (!itemId) return;
+    
+    const { x, y, width, height } = event.nativeEvent.layout;
+    
+    // Store this node's position (it may be a parent for child nodes)
+    if (parentPositionsRef && parentPositionsRef.current) {
+      if (itemType === 'era') {
+        // For Eras, use the measured x,y but use HEXAGON_SIZE for width/height
+        // This ensures Events position correctly even when container expands
+        parentPositionsRef.current[itemId] = { 
+          x, 
+          y, 
+          width: HEXAGON_SIZE, // Use actual hexagon size, not container width
+          height: HEXAGON_SIZE 
+        };
+        console.log(`[Layout] Era ${itemId} positioned at:`, { 
+          x, 
+          y, 
+          width: HEXAGON_SIZE, 
+          height: HEXAGON_SIZE,
+          measuredWidth: width,
+          measuredHeight: height,
+        });
+      } else {
+        // For Events/Scenes, use measured dimensions
+        parentPositionsRef.current[itemId] = { x, y, width, height };
+      }
+    }
+  }, [itemId, parentPositionsRef, itemType]);
+
+  // Determine style based on zoom level and item type for H-shape
+  // Simplified: calculate final positions directly, no animations
+  // IMPORTANT: Eras should NEVER be absolutely positioned - they stay in normal flow
+  const { containerStyle, absolutePosition, finalTranslateX, finalTranslateY } = useMemo(() => {
+    let containerStyle = styles.verticalItem;
+    let absolutePosition = {};
+    let finalTranslateX = 0;
+    let finalTranslateY = 0;
+    
+    // Eras always use normal flow positioning (never absolute)
+    if (itemType === 'era') {
+      return { containerStyle: styles.verticalItem, absolutePosition: {}, finalTranslateX: 0, finalTranslateY: 0 };
+    }
+    
+    // Events: absolute positioning to the right of Era (when at events or scenes level)
+    if ((zoomLevel === 'events' || zoomLevel === 'scenes') && itemType === 'event' && parentId) {
+      containerStyle = styles.horizontalItem;
+      const parentPosition = parentPositionsRef?.current?.[parentId];
+      if (parentPosition && allData) {
+        // Find this Event's index among all Events for the same Era
+        const eraEvents = allData.filter(d => {
+          const dOriginal = d._originalData || d;
+          const dData = dOriginal.data || dOriginal;
+          const dType = dOriginal.type || d.type;
+          const dEraId = d.eraId || dData.eraId;
+          return dType === 'event' && dEraId === parentId;
+        });
+        const eventIndex = eraEvents.findIndex(d => {
+          const dOriginal = d._originalData || d;
+          const dData = dOriginal.data || dOriginal;
+          return (dData.id || d.id) === itemId;
+        });
+        
+        if (eventIndex >= 0) {
+          // Calculate final X position directly: Era's right edge + spacing + (index * (hexagon + spacing))
+          // parentPosition.x is Era's left edge
+          // Use HEXAGON_SIZE for Era width (not parentPosition.width which might be container width)
+          const eraRightEdge = parentPosition.x + HEXAGON_SIZE;
+          const finalX = eraRightEdge + EXPANDED_HORIZONTAL_SPACING + (eventIndex * (HEXAGON_SIZE + EXPANDED_HORIZONTAL_SPACING));
+          
+          console.log(`[Event Positioning] Event ${eventIndex}:`, {
+            eraLeft: parentPosition.x,
+            eraWidth: parentPosition.width,
+            eraRight: eraRightEdge,
+            finalX,
+            spacing: EXPANDED_HORIZONTAL_SPACING,
+            hexagonSize: HEXAGON_SIZE,
+          });
+          
+          // Position Events absolutely at calculated position (no translateX needed)
+          absolutePosition = {
+            position: 'absolute',
+            left: finalX, // Direct position from Era's right edge
+            top: parentPosition.y,
+            width: HEXAGON_SIZE,
+          };
+          finalTranslateX = 0; // No translation needed, position is set directly
+        }
+      } else {
+        // If parent position not measured yet, use relative positioning
+        absolutePosition = {
+          position: 'relative',
+        };
+      }
+    } else if (zoomLevel === 'scenes' && itemType === 'scene' && parentId) {
+      // Scenes: absolute positioning below Event
+      containerStyle = styles.sceneItem;
+      const parentPosition = parentPositionsRef?.current?.[parentId];
+      if (parentPosition && allData) {
+        // parentPosition is the Event's measured position (already at its final X position)
+        // Use it directly - no need to recalculate
+        const eventFinalX = parentPosition.x;
+        
+        // Find this Scene's index among all Scenes for the same Event
+        const eventScenes = allData.filter(d => {
+          const dOriginal = d._originalData || d;
+          const dData = dOriginal.data || dOriginal;
+          const dType = dOriginal.type || d.type;
+          const dEventId = d.eventId || dData.eventId;
+          return dType === 'scene' && dEventId === parentId;
+        });
+        const sceneIndex = eventScenes.findIndex(d => {
+          const dOriginal = d._originalData || d;
+          const dData = dOriginal.data || dOriginal;
+          return (dData.id || d.id) === itemId;
+        });
+        
+        if (sceneIndex >= 0) {
+          // Calculate final Y position directly: Event's bottom edge + spacing + (index * spacing)
+          // Event's bottom edge = parentPosition.y + HEXAGON_SIZE
+          // First Scene: Event's bottom edge + spacing
+          // Second Scene: Event's bottom edge + spacing + (hexagon + spacing)
+          // etc.
+          const eventBottomEdge = parentPosition.y + HEXAGON_SIZE;
+          const finalY = eventBottomEdge + EXPANDED_VERTICAL_SPACING + (sceneIndex * (HEXAGON_SIZE + EXPANDED_VERTICAL_SPACING));
+          
+          console.log(`[Scene Positioning] Scene ${sceneIndex}:`, {
+            eventX: eventFinalX,
+            eventTop: parentPosition.y,
+            eventBottom: eventBottomEdge,
+            finalY,
+            spacing: EXPANDED_VERTICAL_SPACING,
+            hexagonSize: HEXAGON_SIZE,
+          });
+          
+          // Position Scenes absolutely at calculated position (no translateY needed)
+          absolutePosition = {
+            position: 'absolute',
+            left: eventFinalX, // Same X as parent Event (already at final position)
+            top: finalY, // Direct position below Event
+            width: HEXAGON_SIZE,
+          };
+          finalTranslateY = 0; // No translation needed, position is set directly
+        }
+      } else {
+        // If parent position not measured yet, use relative positioning
+        absolutePosition = {
+          position: 'relative',
+        };
+      }
+    }
+    
+    return { containerStyle, absolutePosition, finalTranslateX, finalTranslateY };
+  }, [zoomLevel, itemType, parentId, parentPositionsRef, allData, selectedEraId, selectedEventId, itemId, positionsUpdateKey]);
+  
+  // Set final positions immediately (no animation)
+  useEffect(() => {
+    translateX.value = finalTranslateX;
+    translateY.value = finalTranslateY;
+    opacity.value = 1;
+    scale.value = 1;
+  }, [finalTranslateX, finalTranslateY, translateX, translateY, opacity, scale]);
 
   return (
     <Animated.View
+      onLayout={handleLayout}
       style={[
-        isHorizontalLayout ? styles.horizontalItem : styles.verticalItem,
+        containerStyle,
+        absolutePosition,
         animatedStyle,
         {
           marginRight: isHorizontalLayout ? itemSpacing : 0,
-          marginBottom: isVerticalLayout ? itemSpacing : 0,
+          marginBottom: (isVerticalLayout && zoomLevel === 'eras') ? itemSpacing : 0,
         },
       ]}
     >
@@ -249,142 +443,70 @@ const CardStack = ({
   scenes = {},
   zoomLevel = 'eras',
   selectedEraId = null,
+  selectedEraIds = new Set(),
   selectedEventId = null,
+  selectedEventIds = new Set(),
 }) => {
   // Store shared values in a ref - items will create their own shared values
   // and register them in this ref so parent can access them for animations
   const sharedValuesRef = useRef({});
+  
+  // Store parent node positions for H-shape animations
+  // Maps parentId -> { x, y, width, height } relative to ScrollView
+  const parentPositionsRef = useRef({});
 
   const [isInitialMount, setIsInitialMount] = useState(true);
   const prevZoomLevel = useRef(zoomLevel);
   const prevDataLength = useRef(data.length);
+  const [parentPositionsReady, setParentPositionsReady] = useState(false);
+  const [positionsUpdateKey, setPositionsUpdateKey] = useState(0); // Force re-render when positions change
 
-  // Trigger entrance animations when zoom level changes or new items appear
+  // Check if parent positions are ready for current zoom level
+  // Use a polling mechanism to check when parent positions become available
   useEffect(() => {
-    const zoomChanged = prevZoomLevel.current !== zoomLevel;
-    const dataChanged = prevDataLength.current !== data.length;
-    
-    // Only animate if zoom changed (drilling in/out) or if this is initial mount
-    if (zoomChanged || isInitialMount) {
-      setIsInitialMount(false);
-      
-      // Small delay to ensure data has updated
-      const animationDelay = zoomChanged ? 50 : 0;
-      
-      setTimeout(() => {
-        // Animate items entering based on zoom level
-        data.forEach((item, index) => {
-          const originalData = item._originalData || item;
-          const itemData = originalData.data || originalData;
-          const itemId = itemData.id || item.id || `item-${index}`;
-          if (!itemId) return;
-          
-          // Get shared values for this item from the ref (created by child component)
-          const animValues = sharedValuesRef.current?.[itemId];
-          if (!animValues) return; // Skip if values don't exist yet
-          
-          // Determine initial position based on zoom level
-          if (zoomLevel === 'events' && zoomChanged) {
-            // Events: start from stacked position (offset down and right), animate to vertical position
-            // Simulate unstacking: items start from a stacked position and spread vertically
-            const stackedOffset = Math.min(index, MAX_STACK_DEPTH - 1) * STACK_OFFSET;
-            const initialX = stackedOffset;
-            const initialY = -HEXAGON_SIZE * 0.3; // Start slightly above final position to simulate unstacking
-            
-            // Set initial values immediately
-            animValues.translateX.value = initialX;
-            animValues.translateY.value = initialY;
-            animValues.opacity.value = 0.5;
-            animValues.scale.value = 0.9;
-            
-            // Small delay to ensure initial values are set, then animate
-            setTimeout(() => {
-              // Animate to final vertical position (spread out vertically)
-              animValues.translateX.value = withTiming(0, {
-                duration: 600,
-                easing: Easing.out(Easing.ease),
-              });
-              animValues.translateY.value = withTiming(0, {
-                duration: 600,
-                easing: Easing.out(Easing.ease),
-              });
-              animValues.opacity.value = withTiming(1, {
-                duration: 600,
-                easing: Easing.out(Easing.ease),
-              });
-              animValues.scale.value = withTiming(1, {
-                duration: 600,
-                easing: Easing.out(Easing.ease),
-              });
-            }, 10);
-          } else if (zoomLevel === 'scenes' && zoomChanged) {
-            // Scenes: start from stacked position, animate to horizontal position (to the right)
-            // Simulate expanding to the right
-            const stackedOffset = Math.min(index, MAX_STACK_DEPTH - 1) * STACK_OFFSET;
-            const initialX = -HEXAGON_SIZE * 0.4; // Start from left (stacked position)
-            const initialY = stackedOffset * 0.6;
-            
-            // Set initial values immediately
-            animValues.translateX.value = initialX;
-            animValues.translateY.value = initialY;
-            animValues.opacity.value = 0.5;
-            animValues.scale.value = 0.9;
-            
-            // Small delay to ensure initial values are set, then animate
-            setTimeout(() => {
-              // Animate to final horizontal position (spread out horizontally to the right)
-              animValues.translateX.value = withTiming(0, {
-                duration: 600,
-                easing: Easing.out(Easing.ease),
-              });
-              animValues.translateY.value = withTiming(0, {
-                duration: 600,
-                easing: Easing.out(Easing.ease),
-              });
-              animValues.opacity.value = withTiming(1, {
-                duration: 600,
-                easing: Easing.out(Easing.ease),
-              });
-              animValues.scale.value = withTiming(1, {
-                duration: 600,
-                easing: Easing.out(Easing.ease),
-              });
-            }, 10);
-          } else if (zoomLevel === 'eras') {
-            // Eras: normal entrance animation (fade in with slight scale)
-            if (isInitialMount || zoomChanged) {
-              // Set initial values
-              animValues.opacity.value = 0;
-              animValues.scale.value = 0.95;
-              animValues.translateX.value = 0;
-              animValues.translateY.value = 0;
-              
-              // Animate to final state
-              setTimeout(() => {
-                animValues.opacity.value = withTiming(1, {
-                  duration: 400,
-                  easing: Easing.out(Easing.ease),
-                });
-                animValues.scale.value = withTiming(1, {
-                  duration: 400,
-                  easing: Easing.out(Easing.ease),
-                });
-              }, 10);
-            }
-          } else {
-            // Default: ensure items are visible immediately
-            animValues.opacity.value = 1;
-            animValues.scale.value = 1;
-            animValues.translateX.value = 0;
-            animValues.translateY.value = 0;
-          }
+    if (zoomLevel === 'events' && selectedEraIds.size > 0) {
+      const checkParentPositions = () => {
+        // Check if all selected Eras have their positions measured
+        const allPositionsReady = Array.from(selectedEraIds).every(eraId => {
+          return parentPositionsRef.current?.[eraId];
         });
-      }, animationDelay);
-      
-      prevZoomLevel.current = zoomLevel;
-      prevDataLength.current = data.length;
+        if (allPositionsReady) {
+          setParentPositionsReady(true);
+          setPositionsUpdateKey(prev => prev + 1); // Force re-render to update Event positions
+        } else {
+          // Retry after a short delay
+          setTimeout(checkParentPositions, 50);
+        }
+      };
+      setParentPositionsReady(false);
+      checkParentPositions();
+    } else if (zoomLevel === 'scenes' && selectedEventIds.size > 0) {
+      const checkParentPositions = () => {
+        // Check if all selected Events have their positions measured
+        const allPositionsReady = Array.from(selectedEventIds).every(eventId => {
+          return parentPositionsRef.current?.[eventId];
+        });
+        if (allPositionsReady) {
+          setParentPositionsReady(true);
+          setPositionsUpdateKey(prev => prev + 1); // Force re-render to update Scene positions
+        } else {
+          // Retry after a short delay
+          setTimeout(checkParentPositions, 50);
+        }
+      };
+      setParentPositionsReady(false);
+      checkParentPositions();
+    } else {
+      setParentPositionsReady(true); // No parent needed for eras
     }
-  }, [zoomLevel, data, isInitialMount, sharedValuesRef]);
+  }, [zoomLevel, selectedEraIds, selectedEventIds]);
+
+  // Simplified: just track zoom level changes for logging
+  useEffect(() => {
+    prevZoomLevel.current = zoomLevel;
+    prevDataLength.current = data.length;
+    setIsInitialMount(false);
+  }, [zoomLevel, data.length]);
 
   // Calculate child count for an item
   const getChildCount = (item, itemType, itemData) => {
@@ -510,6 +632,24 @@ const CardStack = ({
   const isHorizontalLayout = zoomLevel === 'scenes';
   const isVerticalLayout = zoomLevel === 'events';
 
+  // Debug: Log data when it changes
+  useEffect(() => {
+    console.log('[CardStack] Data changed:', {
+      dataLength: data.length,
+      zoomLevel,
+      selectedEraId,
+      selectedEventId,
+      eventCount: data.filter(item => {
+        const originalData = item._originalData || item;
+        return (originalData.type || item.type) === 'event';
+      }).length,
+      sceneCount: data.filter(item => {
+        const originalData = item._originalData || item;
+        return (originalData.type || item.type) === 'scene';
+      }).length,
+    });
+  }, [data, zoomLevel, selectedEraIds, selectedEventIds]);
+
   // Render items based on layout
   const renderItems = () => {
     return data.map((item, index) => {
@@ -531,6 +671,26 @@ const CardStack = ({
         ? EXPANDED_HORIZONTAL_SPACING 
         : EXPANDED_VERTICAL_SPACING;
 
+      // Determine parentId for H-shape animations
+      let parentId = null;
+      if ((zoomLevel === 'events' || zoomLevel === 'scenes') && itemType === 'event') {
+        // Events belong to their Era (use eraId from formatted item, fallback to itemData)
+        parentId = item.eraId || itemData.eraId || selectedEraId;
+        if (itemType === 'event') {
+          console.log('[CardStack] Event item:', {
+            itemId,
+            title: formattedItem.title,
+            parentId,
+            eraId: item.eraId || itemData.eraId,
+            selectedEraId,
+            hasParentPosition: !!parentPositionsRef.current?.[parentId],
+          });
+        }
+      } else if (zoomLevel === 'scenes' && itemType === 'scene') {
+        // Scenes belong to the selected Event (use eventId from formatted item, fallback to itemData)
+        parentId = item.eventId || itemData.eventId || selectedEventId;
+      }
+
       return (
         <AnimatedHexagonItem
           key={itemId}
@@ -546,6 +706,8 @@ const CardStack = ({
           isVerticalLayout={isVerticalLayout}
           zoomLevel={zoomLevel}
           sharedValuesRef={sharedValuesRef}
+          parentPositionsRef={parentPositionsRef}
+          parentId={parentId}
           formattedItem={formattedItem}
           onItemPress={onItemPress}
           onItemEdit={onItemEdit}
@@ -553,37 +715,162 @@ const CardStack = ({
           showImages={showImages}
           fontSizes={fontSizes}
           renderStackedNodes={renderStackedNodes}
+          allData={data}
+          selectedEraId={selectedEraId}
+          selectedEraIds={selectedEraIds}
+          selectedEventId={selectedEventId}
+          selectedEventIds={selectedEventIds}
+          positionsUpdateKey={positionsUpdateKey}
         />
       );
     });
   };
 
-  // Use horizontal ScrollView for scenes, vertical for events/eras
-  if (isHorizontalLayout) {
-    return (
-      <View style={styles.container}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.horizontalScrollView}
-          contentContainerStyle={styles.horizontalContentContainer}
-          refreshControl={
-            onRefresh ? (
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            ) : undefined
+  // Calculate container bounds for scrolling
+  // Need to find the maximum X and Y positions of all absolutely positioned items
+  // Use useMemo to recalculate when data or positions change
+  const containerBounds = useMemo(() => {
+    let maxX = screenWidth;
+    let maxY = screenHeight;
+    
+    // Count Events and Scenes to estimate bounds if positions aren't measured yet
+    const eventCount = data.filter(item => {
+      const originalData = item._originalData || item;
+      const itemType = originalData.type || item.type;
+      return itemType === 'event';
+    }).length;
+    
+    const sceneCount = data.filter(item => {
+      const originalData = item._originalData || item;
+      const itemType = originalData.type || item.type;
+      return itemType === 'scene';
+    }).length;
+    
+    // Estimate bounds based on item counts if positions aren't ready
+    if (eventCount > 0 && (zoomLevel === 'events' || zoomLevel === 'scenes')) {
+      // Estimate: Events spread horizontally, so width needs to accommodate them
+      maxX = Math.max(maxX, screenWidth + (eventCount * (HEXAGON_SIZE + EXPANDED_HORIZONTAL_SPACING)));
+    }
+    
+    if (sceneCount > 0 && zoomLevel === 'scenes') {
+      // Estimate: Scenes spread vertically, so height needs to accommodate them
+      maxY = Math.max(maxY, screenHeight + (sceneCount * (HEXAGON_SIZE + EXPANDED_VERTICAL_SPACING)));
+    }
+    
+    // Check all items to find maximum bounds (if positions are measured)
+    data.forEach((item) => {
+      const originalData = item._originalData || item;
+      const itemData = originalData.data || originalData;
+      const itemType = originalData.type || item.type;
+      const itemId = itemData.id || item.id;
+      
+      // For Events at events/scenes level, calculate final position
+      if ((zoomLevel === 'events' || zoomLevel === 'scenes') && itemType === 'event') {
+        const parentId = item.eraId || itemData.eraId || selectedEraId;
+        const parentPosition = parentPositionsRef.current?.[parentId];
+        if (parentPosition) {
+          // Find Event index
+          const eraEvents = data.filter(d => {
+            const dOriginal = d._originalData || d;
+            const dData = dOriginal.data || dOriginal;
+            const dType = dOriginal.type || d.type;
+            const dEraId = d.eraId || dData.eraId || selectedEraId;
+            return dType === 'event' && dEraId === parentId;
+          });
+          const eventIndex = eraEvents.findIndex(d => {
+            const dOriginal = d._originalData || d;
+            const dData = dOriginal.data || dOriginal;
+            return (dData.id || d.id) === itemId;
+          });
+          
+          if (eventIndex >= 0) {
+            const finalX = parentPosition.x + HEXAGON_SIZE + EXPANDED_HORIZONTAL_SPACING + (eventIndex * (HEXAGON_SIZE + EXPANDED_HORIZONTAL_SPACING));
+            const finalY = parentPosition.y;
+            maxX = Math.max(maxX, finalX + HEXAGON_SIZE + 20); // Add padding
+            maxY = Math.max(maxY, finalY + HEXAGON_SIZE + 20);
           }
-        >
-          {renderItems()}
-        </ScrollView>
-      </View>
-    );
-  }
+        }
+      }
+      
+      // For Scenes at scenes level, calculate final position
+      if (zoomLevel === 'scenes' && itemType === 'scene') {
+        const parentId = item.eventId || itemData.eventId || selectedEventId;
+        const parentPosition = parentPositionsRef.current?.[parentId];
+        if (parentPosition) {
+          // Find Event's final X position
+          const parentEvent = data.find(d => {
+            const dOriginal = d._originalData || d;
+            const dData = dOriginal.data || dOriginal;
+            return (dData.id || d.id) === parentId;
+          });
+          
+          let eventFinalX = parentPosition.x;
+          if (parentEvent) {
+            const dOriginal = parentEvent._originalData || parentEvent;
+            const dData = dOriginal.data || dOriginal;
+            const dType = dOriginal.type || parentEvent.type;
+            const eventEraId = parentEvent.eraId || dData.eraId || selectedEraId;
+            
+            if (dType === 'event' && eventEraId) {
+              const eraEvents = data.filter(d => {
+                const eOriginal = d._originalData || d;
+                const eData = eOriginal.data || eOriginal;
+                const eType = eOriginal.type || d.type;
+                const eEraId = d.eraId || eData.eraId || selectedEraId;
+                return eType === 'event' && eEraId === eventEraId;
+              });
+              const eventIndex = eraEvents.findIndex(d => {
+                const eOriginal = d._originalData || d;
+                const eData = eOriginal.data || eOriginal;
+                return (eData.id || d.id) === parentId;
+              });
+              
+              if (eventIndex >= 0) {
+                eventFinalX = parentPosition.x + HEXAGON_SIZE + EXPANDED_HORIZONTAL_SPACING + (eventIndex * (HEXAGON_SIZE + EXPANDED_HORIZONTAL_SPACING));
+              }
+            }
+          }
+          
+          // Find Scene index
+          const eventScenes = data.filter(d => {
+            const dOriginal = d._originalData || d;
+            const dData = dOriginal.data || dOriginal;
+            const dType = dOriginal.type || d.type;
+            const dEventId = d.eventId || dData.eventId || selectedEventId;
+            return dType === 'scene' && dEventId === parentId;
+          });
+          const sceneIndex = eventScenes.findIndex(d => {
+            const dOriginal = d._originalData || d;
+            const dData = dOriginal.data || dOriginal;
+            return (dData.id || d.id) === itemId;
+          });
+          
+          if (sceneIndex >= 0) {
+            const finalX = eventFinalX;
+            const finalY = parentPosition.y + HEXAGON_SIZE + EXPANDED_VERTICAL_SPACING + (sceneIndex * (HEXAGON_SIZE + EXPANDED_VERTICAL_SPACING));
+            maxX = Math.max(maxX, finalX + HEXAGON_SIZE + 20);
+            maxY = Math.max(maxY, finalY + HEXAGON_SIZE + 20);
+          }
+        }
+      }
+    });
+    
+    return { width: maxX, height: maxY };
+  }, [data, zoomLevel, selectedEraId, selectedEventId, parentPositionsRef]);
 
-  // Vertical layout for eras and events
+  // For H-shape layout, we need absolute positioning for Events and Scenes
+  // Use a single ScrollView that contains all levels and expands to fit all items
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[
+        styles.contentContainer,
+        {
+          position: 'relative', // Enable absolute positioning for children
+          minWidth: containerBounds.width,
+          minHeight: containerBounds.height,
+        },
+      ]}
       refreshControl={
         onRefresh ? (
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
