@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -10,6 +8,7 @@ import {
   Image,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { TextInput, Text, useTheme } from 'react-native-paper';
 import { useApp } from '../context/AppContext';
 import TimeInput from '../components/TimeInput';
 import { validateEvent } from '../utils/validation';
@@ -107,7 +106,7 @@ const EditEventScreen = () => {
           </Text>
         </TouchableOpacity>
 
-        {useRelativePosition ? (
+        {useRelativePosition && (
           <View>
             <Text style={styles.label}>Position Relative To *</Text>
             {availableEvents.length === 0 ? (
@@ -170,7 +169,30 @@ const EditEventScreen = () => {
               </>
             )}
           </View>
-        ) : (
+        )}
+
+        {isFictional && (
+          <View>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
+              Custom Time (Fictional Timeline) {useRelativePosition && '(Optional)'}
+            </Text>
+            <Text variant="bodySmall" style={styles.hint}>
+              {useRelativePosition
+                ? 'Optionally enter custom time string in addition to relative positioning'
+                : 'Enter custom time string (e.g., "Year 3000", "Before the Great War")'}
+            </Text>
+            <TextInput
+              label="Time"
+              value={time || ''}
+              onChangeText={setTime}
+              mode="outlined"
+              placeholder="e.g., Year 3000"
+              style={styles.input}
+            />
+          </View>
+        )}
+
+        {!isFictional && !useRelativePosition && (
           <TimeInput
             label="Time"
             value={time}

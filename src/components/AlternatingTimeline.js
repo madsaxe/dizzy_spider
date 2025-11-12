@@ -149,8 +149,18 @@ const AlternatingTimeline = forwardRef(({
     }
 
     // Calculate item positions based on time
+    // First pass: get positions for items with dates
     let itemPositions = data.map(item => {
       const date = getItemDate(item);
+      const originalData = item._originalData || item;
+      const itemData = originalData.data || originalData;
+      
+      // Check if item has relative positioning
+      if (itemData.positionRelativeTo && !date) {
+        // Will be positioned relative to another item in second pass
+        return { item, yPosition: null, tickIndex: null, isRelative: true, positionRelativeTo: itemData.positionRelativeTo, positionType: itemData.positionType };
+      }
+      
       if (!date) return { item, yPosition: null, tickIndex: null };
 
       // Find nearest tick
@@ -164,7 +174,7 @@ const AlternatingTimeline = forwardRef(({
         }
       });
 
-      return { item, tickIndex: nearestTickIndex, originalDate: date };
+      return { item, tickIndex: nearestTickIndex, originalDate: date, isRelative: false };
     });
 
     // Group items by tick index to handle overlaps
@@ -183,8 +193,10 @@ const AlternatingTimeline = forwardRef(({
     const minItemSpacing = 120; // Minimum space between items at the same tick
     const itemHeight = 100; // Estimated item height
 
+    // First pass: position items with dates
     itemPositions = itemPositions.map(pos => {
-      if (pos.tickIndex === null) return pos;
+      if (pos.tickIndex === null && !pos.isRelative) return pos;
+      if (pos.isRelative) return pos; // Handle in second pass
 
       const itemsAtTick = itemsByTick[pos.tickIndex];
       if (itemsAtTick.length === 1) {
@@ -194,6 +206,108 @@ const AlternatingTimeline = forwardRef(({
         // Multiple items at same tick - stack them vertically
         const itemIndex = itemsAtTick.findIndex(p => p.item.id === pos.item.id);
         pos.yPosition = pos.tickIndex * tickSpacing + 16 + (itemIndex * minItemSpacing);
+      }
+
+      return pos;
+    });
+
+    // Second pass: position relatively positioned items
+    // Sort items by order to ensure consistent positioning when dates aren't available
+    const itemsWithOrder = itemPositions.map((pos, index) => {
+      const originalData = pos.item._originalData || pos.item;
+      const itemData = originalData.data || originalData;
+      return {
+        ...pos,
+        order: itemData.order !== undefined ? itemData.order : index,
+      };
+    });
+    itemsWithOrder.sort((a, b) => a.order - b.order);
+
+    itemPositions = itemPositions.map(pos => {
+      if (!pos.isRelative || !pos.positionRelativeTo) return pos;
+
+      // Find the reference item
+      const referencePos = itemPositions.find(p => {
+        const refOriginalData = p.item._originalData || p.item;
+        const refData = refOriginalData.data || refOriginalData;
+        return refData.id === pos.positionRelativeTo;
+      });
+
+      if (!referencePos) {
+        // Reference not found - use order-based positioning as fallback
+        const originalData = pos.item._originalData || pos.item;
+        const itemData = originalData.data || originalData;
+        const refOriginalData = itemsWithOrder.find(p => {
+          const pData = (p.item._originalData || p.item).data || (p.item._originalData || p.item);
+          return pData.id === pos.positionRelativeTo;
+        });
+        
+        if (refOriginalData) {
+          const refOrder = (refOriginalData.item._originalData || refOriginalData.item).data?.order ?? 0;
+          const itemOrder = itemData.order ?? 0;
+          // Use order difference to calculate spacing (each order unit = 3 ticks)
+          const orderDiff = Math.abs(itemOrder - refOrder) || 1;
+          const defaultSpacing = 3 * tickSpacing * orderDiff;
+          
+          if (pos.positionType === 'before') {
+            pos.yPosition = (refOrder * 3 * tickSpacing) - defaultSpacing;
+          } else {
+            pos.yPosition = (refOrder * 3 * tickSpacing) + defaultSpacing;
+          }
+        }
+        return pos;
+      }
+
+      if (referencePos.yPosition === null) {
+        // Reference has no date - use order-based spacing
+        const originalData = pos.item._originalData || pos.item;
+        const itemData = originalData.data || originalData;
+        const refOriginalData = referencePos.item._originalData || referencePos.item;
+        const refData = refOriginalData.data || refOriginalData;
+        
+        const refOrder = refData.order ?? 0;
+        const itemOrder = itemData.order ?? 0;
+        const orderDiff = Math.abs(itemOrder - refOrder) || 1;
+        const defaultSpacing = 3 * tickSpacing * orderDiff;
+        
+        // Calculate base position from order
+        const baseY = refOrder * 3 * tickSpacing;
+        
+        if (pos.positionType === 'before') {
+          pos.yPosition = baseY - defaultSpacing;
+        } else {
+          pos.yPosition = baseY + defaultSpacing;
+        }
+        return pos;
+      }
+
+      // Reference has a date - use date-based positioning
+      // Default to 3 ticks apart (3 * tickSpacing = 450px)
+      const defaultSpacing = 3 * tickSpacing;
+      
+      if (pos.positionType === 'before') {
+        // Position before reference (above) - 3 ticks apart
+        pos.yPosition = referencePos.yPosition - defaultSpacing;
+      } else {
+        // Position after reference (below) - 3 ticks apart - default to 'after'
+        pos.yPosition = referencePos.yPosition + defaultSpacing;
+      }
+
+      // Ensure no overlap with other items
+      // Check all items and adjust if needed (use defaultSpacing as minimum)
+      const conflictingPos = itemPositions.find(p => 
+        p !== pos && 
+        p.yPosition !== null && 
+        Math.abs(p.yPosition - pos.yPosition) < defaultSpacing
+      );
+
+      if (conflictingPos) {
+        // Adjust position to avoid overlap - maintain 3 tick spacing
+        if (pos.positionType === 'before') {
+          pos.yPosition = conflictingPos.yPosition - defaultSpacing;
+        } else {
+          pos.yPosition = conflictingPos.yPosition + defaultSpacing;
+        }
       }
 
       return pos;

@@ -167,15 +167,46 @@ const CreateEraScreen = () => {
           </View>
         )}
 
-        <TimeInput
-          label="Time Range"
-          mode="range"
-          isFictional={isFictional}
-          startValue={startTime}
-          endValue={endTime}
-          onStartTimeChange={setStartTime}
-          onEndTimeChange={setEndTime}
-        />
+        {isFictional && (
+          <View>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
+              Custom Time (Fictional Timeline) {positionRelativeTo && '(Optional)'}
+            </Text>
+            <Text variant="bodySmall" style={styles.hint}>
+              {positionRelativeTo 
+                ? 'Optionally enter custom time strings in addition to relative positioning'
+                : 'Enter custom time strings (e.g., "Year 3000", "Before the Great War")'}
+            </Text>
+            <TextInput
+              label="Start Time"
+              value={startTime || ''}
+              onChangeText={setStartTime}
+              mode="outlined"
+              placeholder="e.g., Year 3000"
+              style={styles.input}
+            />
+            <TextInput
+              label="End Time (Optional)"
+              value={endTime || ''}
+              onChangeText={setEndTime}
+              mode="outlined"
+              placeholder="e.g., Year 3100"
+              style={styles.input}
+            />
+          </View>
+        )}
+
+        {!isFictional && (
+          <TimeInput
+            label="Time Range"
+            mode="range"
+            isFictional={isFictional}
+            startValue={startTime}
+            endValue={endTime}
+            onStartTimeChange={setStartTime}
+            onEndTimeChange={setEndTime}
+          />
+        )}
 
         <Text variant="titleMedium" style={styles.sectionTitle}>
           Hero Image (Optional)

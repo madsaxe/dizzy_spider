@@ -16,10 +16,14 @@ const screenWidth = Dimensions.get('window').width;
 const screenHeight = Dimensions.get('window').height;
 
 // Stack configuration
-const STACK_OFFSET = 15; // Offset between stacked nodes (down and right)
-const MAX_STACK_DEPTH = 5; // Maximum number of visible stacked nodes
-const EXPANDED_VERTICAL_SPACING = 20; // Spacing between expanded nodes (vertical)
-const EXPANDED_HORIZONTAL_SPACING = 20; // Spacing between expanded nodes (horizontal)
+const STACK_OFFSET = 4; // Offset between stacked nodes (down and right) - reduced to 6px
+const MAX_STACK_DEPTH = 6 // Maximum number of visible stacked nodes
+const EXPANDED_VERTICAL_SPACING = -30; // Spacing between expanded nodes (vertical) - 5pt for scenes
+const EXPANDED_HORIZONTAL_SPACING = -50; // Spacing between expanded nodes (horizontal) - initial gap + spacing between events
+const ERA_CARDSTACK_SPACING = -30; // Spacing between Era cardstacks (vertical)
+const EVENT_STAGGER_VERTICAL_OFFSET = HEXAGON_SIZE / 2;// Vertical offset for every other Event (even indices)
+// Clipping offset based on hexagon clipping shape width (approximately 5% of hexagon size)
+const CLIPPING_OFFSET = HEXAGON_SIZE * 0.05;
 
 // Styles need to be defined before components that use them
 const styles = StyleSheet.create({
@@ -54,6 +58,8 @@ const styles = StyleSheet.create({
     position: 'relative', // Enable absolute positioning for Events/Scenes
     // Ensure Era nodes don't expand when children are added
     alignSelf: 'flex-start', // Prevent stretching
+    minHeight: HEXAGON_SIZE, // Fixed minimum height to prevent position changes
+    height: HEXAGON_SIZE, // Fixed height so Eras don't move when Events expand
   },
   horizontalItem: {
     alignItems: 'center',
@@ -165,6 +171,8 @@ const AnimatedHexagonItem = ({
   selectedEventId, // Selected event ID for filtering (backward compatibility)
   selectedEventIds, // Set of selected event IDs
   positionsUpdateKey, // Key to force re-render when positions change
+  breadcrumbNodeIds, // Nodes in current breadcrumb path for opacity styling
+  selectionOrder, // Map of nodeId -> timestamp for z-index ordering
 }) => {
   // Create shared values for each item component instance at the top level
   // Simplified: no animations, just static positioning
@@ -285,26 +293,40 @@ const AnimatedHexagonItem = ({
         });
         
         if (eventIndex >= 0) {
-          // Calculate final X position directly: Era's right edge + spacing + (index * (hexagon + spacing))
-          // parentPosition.x is Era's left edge
-          // Use HEXAGON_SIZE for Era width (not parentPosition.width which might be container width)
+          // Calculate staggered positioning for Events
+          // Even indices (0, 2, 4...): down by half hexagon height
+          // Odd indices (1, 3, 5...): at same height as parent
+          // Events should overlap by clipping triangle width, so spacing = HEXAGON_SIZE - CLIPPING_OFFSET
           const eraRightEdge = parentPosition.x + HEXAGON_SIZE;
-          const finalX = eraRightEdge + EXPANDED_HORIZONTAL_SPACING + (eventIndex * (HEXAGON_SIZE + EXPANDED_HORIZONTAL_SPACING));
+          const isEven = eventIndex % 2 === 0;
+          const verticalOffset = isEven ? EVENT_STAGGER_VERTICAL_OFFSET : 0; // First child (index 0) is lower
+          // Each event overlaps the previous by CLIPPING_OFFSET
+          // EXPANDED_HORIZONTAL_SPACING controls the initial gap and spacing between events
+          // To maintain overlap, spacing = HEXAGON_SIZE - CLIPPING_OFFSET
+          // But we can add EXPANDED_HORIZONTAL_SPACING to increase spacing (reducing overlap)
+          const horizontalSpacing = HEXAGON_SIZE - CLIPPING_OFFSET + EXPANDED_HORIZONTAL_SPACING;
+          const finalX = eraRightEdge + EXPANDED_HORIZONTAL_SPACING + (eventIndex * horizontalSpacing);
+          const finalY = parentPosition.y + verticalOffset;
           
           console.log(`[Event Positioning] Event ${eventIndex}:`, {
             eraLeft: parentPosition.x,
             eraWidth: parentPosition.width,
             eraRight: eraRightEdge,
             finalX,
-            spacing: EXPANDED_HORIZONTAL_SPACING,
+            finalY,
+            isEven,
+            verticalOffset,
+            horizontalSpacing,
+            clippingOffset: CLIPPING_OFFSET,
+            expandedHorizontalSpacing: EXPANDED_HORIZONTAL_SPACING,
             hexagonSize: HEXAGON_SIZE,
           });
           
           // Position Events absolutely at calculated position (no translateX needed)
           absolutePosition = {
             position: 'absolute',
-            left: finalX, // Direct position from Era's right edge
-            top: parentPosition.y,
+            left: finalX, // Direct position from Era's right edge with staggered offset
+            top: finalY, // Staggered vertical position for odd indices
             width: HEXAGON_SIZE,
           };
           finalTranslateX = 0; // No translation needed, position is set directly
@@ -345,6 +367,7 @@ const AnimatedHexagonItem = ({
           // Second Scene: Event's bottom edge + spacing + (hexagon + spacing)
           // etc.
           const eventBottomEdge = parentPosition.y + HEXAGON_SIZE;
+          // Scenes should be 10pt apart (EXPANDED_VERTICAL_SPACING = 10)
           const finalY = eventBottomEdge + EXPANDED_VERTICAL_SPACING + (sceneIndex * (HEXAGON_SIZE + EXPANDED_VERTICAL_SPACING));
           
           console.log(`[Scene Positioning] Scene ${sceneIndex}:`, {
@@ -377,6 +400,43 @@ const AnimatedHexagonItem = ({
   }, [zoomLevel, itemType, parentId, parentPositionsRef, allData, selectedEraId, selectedEventId, itemId, positionsUpdateKey]);
   
   // Set final positions immediately (no animation)
+  // Calculate if node should have darkening overlay based on breadcrumb path
+  const isInBreadcrumb = breadcrumbNodeIds && breadcrumbNodeIds.has(itemId);
+  const shouldDarken = !isInBreadcrumb; // Darken nodes not in breadcrumb path
+
+  // Calculate z-index based on selection order (most recent = highest z-index)
+  // Only nodes in the breadcrumb (focused) get higher z-index
+  // This ensures focused nodes appear on top while allowing all nodes to be clickable
+  const getZIndex = () => {
+    const baseZIndex = 10;
+    
+    // Only apply higher z-index to nodes in the breadcrumb (focused nodes)
+    if (!isInBreadcrumb) {
+      return baseZIndex; // Not in breadcrumb, use base z-index
+    }
+    
+    // Node is in breadcrumb, apply z-index based on selection order
+    if (!selectionOrder || selectionOrder.size === 0) {
+      return baseZIndex + 50; // In breadcrumb but no selection order, slightly higher
+    }
+    
+    // Get all timestamps and sort them
+    const sortedTimestamps = Array.from(selectionOrder.values()).sort((a, b) => a - b);
+    const nodeTimestamp = selectionOrder.get(itemId);
+    
+    if (nodeTimestamp === undefined) {
+      return baseZIndex + 50; // In breadcrumb but not in selection order, slightly higher
+    }
+    
+    // Find index in sorted array (0 = oldest, length-1 = newest)
+    const orderIndex = sortedTimestamps.indexOf(nodeTimestamp);
+    // Most recent gets highest z-index (base + 50 + orderIndex)
+    // This ensures recently selected nodes appear above older ones
+    return baseZIndex + 50 + orderIndex;
+  };
+
+  const calculatedZIndex = getZIndex();
+
   useEffect(() => {
     translateX.value = finalTranslateX;
     translateY.value = finalTranslateY;
@@ -393,7 +453,8 @@ const AnimatedHexagonItem = ({
         animatedStyle,
         {
           marginRight: isHorizontalLayout ? itemSpacing : 0,
-          marginBottom: (isVerticalLayout && zoomLevel === 'eras') ? itemSpacing : 0,
+          marginBottom: (zoomLevel === 'eras' && itemType === 'era') ? itemSpacing : (isVerticalLayout && itemSpacing ? itemSpacing : 0),
+          zIndex: calculatedZIndex, // Apply z-index based on selection order
         },
       ]}
     >
@@ -404,7 +465,14 @@ const AnimatedHexagonItem = ({
             width: HEXAGON_SIZE + stackPadding + 10,
             height: HEXAGON_SIZE + stackPadding + 10,
           }]}>
-            {renderStackedNodes && renderStackedNodes(item, itemType, itemData, childCount)}
+            {renderStackedNodes && (() => {
+              const isSelected = itemType === 'era' 
+                ? selectedEraIds.has(itemId)
+                : itemType === 'event'
+                ? selectedEventIds.has(itemId)
+                : false;
+              return renderStackedNodes(item, itemType, itemData, childCount, isSelected);
+            })()}
           </View>
         )}
 
@@ -423,6 +491,7 @@ const AnimatedHexagonItem = ({
             showImage={showImages}
             fontSizes={fontSizes}
             zoomLevel={zoomLevel}
+            shouldDarken={shouldDarken}
           />
         </View>
       </View>
@@ -446,6 +515,8 @@ const CardStack = ({
   selectedEraIds = new Set(),
   selectedEventId = null,
   selectedEventIds = new Set(),
+  breadcrumbNodeIds = new Set(), // Nodes in current breadcrumb path for opacity styling
+  selectionOrder = new Map(), // Map of nodeId -> timestamp for z-index ordering
 }) => {
   // Store shared values in a ref - items will create their own shared values
   // and register them in this ref so parent can access them for animations
@@ -509,11 +580,12 @@ const CardStack = ({
   }, [zoomLevel, data.length]);
 
   // Calculate child count for an item
+  // Always return count regardless of zoom level - stacks should persist unless node is expanded
   const getChildCount = (item, itemType, itemData) => {
-    if (itemType === 'era' && zoomLevel === 'eras') {
+    if (itemType === 'era') {
       const eraEvents = events[itemData.id] || [];
       return eraEvents.length;
-    } else if (itemType === 'event' && zoomLevel === 'events') {
+    } else if (itemType === 'event') {
       const eventScenes = scenes[itemData.id] || [];
       return eventScenes.length;
     }
@@ -521,10 +593,11 @@ const CardStack = ({
   };
 
   // Get child items for an item
+  // Always return items regardless of zoom level - needed for stacking display
   const getChildItems = (item, itemType, itemData) => {
-    if (itemType === 'era' && zoomLevel === 'eras') {
+    if (itemType === 'era') {
       return events[itemData.id] || [];
-    } else if (itemType === 'event' && zoomLevel === 'events') {
+    } else if (itemType === 'event') {
       return scenes[itemData.id] || [];
     }
     return [];
@@ -538,8 +611,15 @@ const CardStack = ({
   };
 
   // Render stacked nodes for an item (up to 5 visible)
-  const renderStackedNodes = useCallback((item, itemType, itemData, childCount) => {
-    if (childCount === 0 || zoomLevel !== 'eras') return null; // Only show stacks at eras level
+  const renderStackedNodes = useCallback((item, itemType, itemData, childCount, isSelected) => {
+    if (childCount === 0) return null;
+    
+    // Show stacks for Eras if Era is not selected (regardless of zoom level)
+    // Show stacks for Events if Event is not selected (regardless of zoom level)
+    // Stacks persist unless that specific node is currently expanded/unstacked
+    const shouldShowStack = !isSelected;
+    
+    if (!shouldShowStack) return null;
 
     const visibleStackCount = Math.min(childCount, MAX_STACK_DEPTH);
     const childItems = getChildItems(item, itemType, itemData);
@@ -661,15 +741,24 @@ const CardStack = ({
 
       const formattedItem = formatItem(item);
 
-      // Calculate stack padding for items with children (only at eras level)
-      const stackPadding = (childCount > 0 && zoomLevel === 'eras') 
+      // Calculate stack padding for items with children
+      // Stacks should show for any node with children, regardless of zoom level (unless that specific node is expanded)
+      const stackPadding = childCount > 0
         ? (Math.min(childCount, MAX_STACK_DEPTH) * STACK_OFFSET) 
         : 0;
 
       // Calculate spacing for expanded layouts
-      const itemSpacing = isHorizontalLayout 
+      // Use ERA_CARDSTACK_SPACING for Era nodes, otherwise use EXPANDED_VERTICAL_SPACING or EXPANDED_HORIZONTAL_SPACING
+      const itemSpacing = itemType === 'era' && zoomLevel === 'eras'
+        ? ERA_CARDSTACK_SPACING
+        : isHorizontalLayout 
         ? EXPANDED_HORIZONTAL_SPACING 
         : EXPANDED_VERTICAL_SPACING;
+      
+      // Debug log for Era spacing
+      if (itemType === 'era' && zoomLevel === 'eras') {
+        console.log(`[Era Spacing] Era ${itemId}: itemSpacing=${itemSpacing}, ERA_CARDSTACK_SPACING=${ERA_CARDSTACK_SPACING}`);
+      }
 
       // Determine parentId for H-shape animations
       let parentId = null;
@@ -721,6 +810,8 @@ const CardStack = ({
           selectedEventId={selectedEventId}
           selectedEventIds={selectedEventIds}
           positionsUpdateKey={positionsUpdateKey}
+          breadcrumbNodeIds={breadcrumbNodeIds}
+          selectionOrder={selectionOrder}
         />
       );
     });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -66,6 +66,9 @@ const TimelineVisualization = forwardRef(({
     selectedEraIds,
     selectedEventId,
     selectedEventIds,
+    mostRecentEraId,
+    mostRecentEventId,
+    selectionOrder,
     toggleEra,
     toggleEvent,
     zoomIn,
@@ -218,27 +221,23 @@ const TimelineVisualization = forwardRef(({
       setAllTimelineItems(items);
       
       // Filter based on zoom level
-      // For H-shape layout (simple view), include parent items so they remain visible
+      // For H-shape layout (simple view), show all Eras always, and show Events/Scenes for selected parents
       let filteredItems;
       if (viewMode === 'simple') {
-        // H-shape: show all levels simultaneously
-        if (zoomLevel === 'events') {
-          // Show all Eras + Events for all selected Eras
-          filteredItems = items.filter(item => 
-            item.type === 'era' || 
-            (item.type === 'event' && selectedEraIds.has(item.eraId))
-          );
-        } else if (zoomLevel === 'scenes') {
-          // Show all Eras + Events for all selected Eras + Scenes for all selected Events
-          filteredItems = items.filter(item => 
-            item.type === 'era' || 
-            (item.type === 'event' && selectedEraIds.has(item.eraId)) ||
-            (item.type === 'scene' && selectedEventIds.has(item.eventId))
-          );
-        } else {
-          // Show only Eras
-          filteredItems = items.filter(item => item.type === 'era');
-        }
+        // H-shape: show all Eras always, Events for selected Eras, Scenes for selected Events
+        // All nodes remain visible, but only selected paths are at full opacity
+        filteredItems = items.filter(item => {
+          if (item.type === 'era') {
+            return true; // Always show all Eras
+          } else if (item.type === 'event') {
+            // Show Events for selected Eras
+            return selectedEraIds.has(item.eraId);
+          } else if (item.type === 'scene') {
+            // Show Scenes for selected Events
+            return selectedEventIds.has(item.eventId);
+          }
+          return false;
+        });
       } else {
         // Advanced view: use standard filtering
         filteredItems = filterByZoomLevel(items, zoomLevel, selectedEraId, selectedEventId);
@@ -257,7 +256,7 @@ const TimelineVisualization = forwardRef(({
       setTimelineData([]);
       setAllTimelineItems([]);
     }
-  }, [eras, events, scenes, isFictional, zoomLevel, selectedEraId, selectedEventId, viewMode]);
+  }, [eras, events, scenes, isFictional, zoomLevel, selectedEraId, selectedEraIds, selectedEventId, selectedEventIds, viewMode]);
 
   const loadTimelineData = async () => {
     try {
@@ -298,8 +297,27 @@ const TimelineVisualization = forwardRef(({
     if (itemType === 'era') {
       const isCurrentlySelected = selectedEraIds.has(itemData.id);
       
+      // If we're at scenes level and clicking an Era, zoom out to events level first
+      // This will clear Event selection and update breadcrumb
+      if (zoomLevel === 'scenes') {
+        if (viewMode === 'advanced') {
+          // Advanced view: Store pending zoom action and trigger transition animation
+          pendingZoomAction.current = { type: 'zoomOut' };
+          setRefreshKey(prev => prev + 1);
+        } else {
+          // Simple view: Execute zoom immediately without animation
+          zoomOut();
+          // After zooming out, toggle the Era if it's not already selected
+          if (!isCurrentlySelected) {
+            toggleEra(itemData.id);
+          }
+        }
+        return;
+      }
+      
       // If clicking an Era that's already selected, toggle it off
       if (isCurrentlySelected) {
+        // No repacking - allow all nodes to remain visible
         if (viewMode === 'advanced') {
           // For advanced view, we need to handle zoom out if this was the only selected Era
           if (selectedEraIds.size === 1) {
@@ -314,30 +332,7 @@ const TimelineVisualization = forwardRef(({
         return;
       }
       
-      // If clicking a new Era, check for overlap with existing Scenes
-      if (zoomLevel === 'scenes' && selectedEventIds.size > 0) {
-        // Get all Events for this Era
-        const eraEvents = events[itemData.id] || [];
-        // Get all Events that have Scenes visible
-        const eventsWithScenes = Array.from(selectedEventIds);
-        // Check if any of the new Era's Events would overlap with existing Scenes
-        // (Events from the same Era would be at the same X positions)
-        // For now, we'll remove all Events that have Scenes visible if they're from a different Era
-        // This is a simple approach - we could make it more sophisticated later
-        const overlappingEventIds = eventsWithScenes.filter(eventId => {
-          const event = Object.values(events).flat().find(e => e.id === eventId);
-          return event && event.eraId !== itemData.id;
-        });
-        
-        // Remove overlapping Events from selection
-        if (overlappingEventIds.length > 0) {
-          overlappingEventIds.forEach(eventId => {
-            toggleEvent(eventId);
-          });
-        }
-      }
-      
-      // Toggle the Era (add it to selection)
+      // Toggle the Era (add it to selection) - no overlap checking, allow all nodes
       if (viewMode === 'advanced') {
         pendingZoomAction.current = { type: 'zoomIn', eraId: itemData.id };
         setRefreshKey(prev => prev + 1);
@@ -444,7 +439,9 @@ const TimelineVisualization = forwardRef(({
     });
     
     if (zoomLevel === 'events' || zoomLevel === 'scenes') {
-      const era = eras.find(e => e.id === selectedEraId);
+      // Use mostRecentEraId to show the most recently selected Era in breadcrumb
+      const eraId = mostRecentEraId || selectedEraId;
+      const era = eras.find(e => e.id === eraId);
       if (era) {
         items.push({ 
           label: era.title, 
@@ -464,7 +461,9 @@ const TimelineVisualization = forwardRef(({
     }
     
     if (zoomLevel === 'scenes') {
-      const event = Object.values(events).flat().find(e => e.id === selectedEventId);
+      // Use mostRecentEventId to show the most recently selected Event in breadcrumb
+      const eventId = mostRecentEventId || selectedEventId;
+      const event = Object.values(events).flat().find(e => e.id === eventId);
       if (event) {
         items.push({ 
           label: event.title, 
@@ -498,6 +497,19 @@ const TimelineVisualization = forwardRef(({
     }
   };
 
+  // Memoize breadcrumb items to ensure they update when mostRecentEraId or mostRecentEventId changes
+  // MUST be called before any early returns to maintain hook order
+  const breadcrumbItems = useMemo(() => getBreadcrumbItems(), [
+    zoomLevel,
+    selectedEraId,
+    mostRecentEraId,
+    mostRecentEventId,
+    selectedEventId,
+    eras,
+    events,
+    viewMode,
+  ]);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -519,8 +531,66 @@ const TimelineVisualization = forwardRef(({
       </View>
     );
   }
-
-  const breadcrumbItems = getBreadcrumbItems();
+  
+  // Determine which nodes are in the current breadcrumb path for overlay styling
+  // Nodes in breadcrumb have no overlay (full brightness), others get darkened overlay
+  const getBreadcrumbNodeIds = () => {
+    const breadcrumbIds = new Set();
+    
+    // At eras level: All Eras are in focus
+    if (zoomLevel === 'eras') {
+      eras.forEach(era => breadcrumbIds.add(era.id));
+    } else if (zoomLevel === 'events') {
+      // At events level: Selected Eras + ALL their Events are in focus
+      selectedEraIds.forEach(eraId => {
+        breadcrumbIds.add(eraId); // Selected Era is in breadcrumb
+        
+        // ALL Events from selected Eras are in focus when Era is unstacked
+        const eraEvents = events[eraId] || [];
+        eraEvents.forEach(event => {
+          breadcrumbIds.add(event.id); // All Events from selected Era are in focus
+        });
+      });
+    } else if (zoomLevel === 'scenes') {
+      // At scenes level: Only selected Eras + MOST RECENTLY selected Event + its Scenes are in focus
+      // All other Events (even if previously selected) should be darkened
+      
+      // Determine the most recent Event ID (use mostRecentEventId if available, otherwise find from selectionOrder)
+      let focusEventId = mostRecentEventId;
+      if (!focusEventId && selectedEventIds.size > 0 && selectionOrder && selectionOrder.size > 0) {
+        // Fallback: find the Event with the most recent timestamp in selectionOrder
+        const eventTimestamps = Array.from(selectionOrder.entries())
+          .filter(([nodeId]) => selectedEventIds.has(nodeId))
+          .sort(([, ts1], [, ts2]) => ts2 - ts1); // Sort descending (most recent first)
+        if (eventTimestamps.length > 0) {
+          focusEventId = eventTimestamps[0][0];
+        }
+      }
+      
+      selectedEraIds.forEach(eraId => {
+        breadcrumbIds.add(eraId); // Selected Era is in breadcrumb
+        
+        // Only the MOST RECENTLY selected Event is in focus
+        // All other Events (including previously selected ones) should be darkened
+        const eraEvents = events[eraId] || [];
+        eraEvents.forEach(event => {
+          // Only add the most recent Event to breadcrumb
+          if (event.id === focusEventId && selectedEventIds.has(event.id)) {
+            breadcrumbIds.add(event.id); // Only most recent Event is in breadcrumb
+            
+            // Only the MOST RECENTLY selected Event's Scenes are in focus
+            const eventScenes = scenes[event.id] || [];
+            eventScenes.forEach(scene => breadcrumbIds.add(scene.id));
+          }
+          // All other Events (even if in selectedEventIds) are NOT in breadcrumb = darkened
+        });
+      });
+    }
+    
+    return breadcrumbIds;
+  };
+  
+  const breadcrumbNodeIds = getBreadcrumbNodeIds();
 
   return (
     <View style={[styles.container, { backgroundColor: containerBackgroundColor }]}>
@@ -629,6 +699,8 @@ const TimelineVisualization = forwardRef(({
                   selectedEraIds={selectedEraIds}
                   selectedEventId={selectedEventId}
                   selectedEventIds={selectedEventIds}
+                  breadcrumbNodeIds={breadcrumbNodeIds}
+                  selectionOrder={selectionOrder}
                 />
               )}
             </View>

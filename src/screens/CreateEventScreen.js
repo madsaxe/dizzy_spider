@@ -133,7 +133,7 @@ const CreateEventScreen = () => {
           style={styles.toggleButton}
         />
 
-        {useRelativePosition ? (
+        {useRelativePosition && (
           <View>
             <Text variant="titleMedium" style={styles.sectionTitle}>
               Position Relative To *
@@ -178,7 +178,30 @@ const CreateEventScreen = () => {
               </>
             )}
           </View>
-        ) : (
+        )}
+
+        {isFictional && (
+          <View>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
+              Custom Time (Fictional Timeline) {useRelativePosition && '(Optional)'}
+            </Text>
+            <Text variant="bodySmall" style={styles.hint}>
+              {useRelativePosition
+                ? 'Optionally enter custom time string in addition to relative positioning'
+                : 'Enter custom time string (e.g., "Year 3000", "Before the Great War")'}
+            </Text>
+            <TextInput
+              label="Time"
+              value={time || ''}
+              onChangeText={setTime}
+              mode="outlined"
+              placeholder="e.g., Year 3000"
+              style={styles.input}
+            />
+          </View>
+        )}
+
+        {!isFictional && !useRelativePosition && (
           <TimeInput
             label="Time"
             value={time}

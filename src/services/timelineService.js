@@ -291,6 +291,104 @@ class TimelineService {
   }
 
   /**
+   * Update era order
+   * @param {string} eraId - Era ID
+   * @param {number} newOrder - New order value
+   * @returns {Promise<Era|null>}
+   */
+  async updateEraOrder(eraId, newOrder) {
+    return this.updateEra(eraId, { order: newOrder });
+  }
+
+  /**
+   * Update era date
+   * @param {string} eraId - Era ID
+   * @param {string} newDate - New date (startTime for eras)
+   * @param {string} newEndDate - New end date (optional)
+   * @returns {Promise<Era|null>}
+   */
+  async updateEraDate(eraId, newDate, newEndDate = null) {
+    const updates = { startTime: newDate };
+    if (newEndDate) {
+      updates.endTime = newEndDate;
+    }
+    return this.updateEra(eraId, updates);
+  }
+
+  /**
+   * Update era relative position
+   * @param {string} eraId - Era ID
+   * @param {string|null} positionRelativeTo - ID of era to position relative to
+   * @param {string|null} positionType - 'before' or 'after'
+   * @returns {Promise<Era|null>}
+   */
+  async updateEraPosition(eraId, positionRelativeTo, positionType) {
+    return this.updateEra(eraId, { positionRelativeTo, positionType });
+  }
+
+  /**
+   * Update event order
+   * @param {string} eventId - Event ID
+   * @param {number} newOrder - New order value
+   * @returns {Promise<Event|null>}
+   */
+  async updateEventOrder(eventId, newOrder) {
+    return this.updateEvent(eventId, { order: newOrder });
+  }
+
+  /**
+   * Update event date
+   * @param {string} eventId - Event ID
+   * @param {string} newDate - New date
+   * @returns {Promise<Event|null>}
+   */
+  async updateEventDate(eventId, newDate) {
+    return this.updateEvent(eventId, { time: newDate });
+  }
+
+  /**
+   * Update event relative position
+   * @param {string} eventId - Event ID
+   * @param {string|null} positionRelativeTo - ID of event to position relative to
+   * @param {string|null} positionType - 'before' or 'after'
+   * @returns {Promise<Event|null>}
+   */
+  async updateEventPosition(eventId, positionRelativeTo, positionType) {
+    return this.updateEvent(eventId, { positionRelativeTo, positionType });
+  }
+
+  /**
+   * Update scene order
+   * @param {string} sceneId - Scene ID
+   * @param {number} newOrder - New order value
+   * @returns {Promise<Scene|null>}
+   */
+  async updateSceneOrder(sceneId, newOrder) {
+    return this.updateScene(sceneId, { order: newOrder });
+  }
+
+  /**
+   * Update scene date
+   * @param {string} sceneId - Scene ID
+   * @param {string} newDate - New date
+   * @returns {Promise<Scene|null>}
+   */
+  async updateSceneDate(sceneId, newDate) {
+    return this.updateScene(sceneId, { time: newDate });
+  }
+
+  /**
+   * Update scene relative position
+   * @param {string} sceneId - Scene ID
+   * @param {string|null} positionRelativeTo - ID of scene to position relative to
+   * @param {string|null} positionType - 'before' or 'after'
+   * @returns {Promise<Scene|null>}
+   */
+  async updateScenePosition(sceneId, positionRelativeTo, positionType) {
+    return this.updateScene(sceneId, { positionRelativeTo, positionType });
+  }
+
+  /**
    * Delete a scene
    * @param {string} sceneId - Scene ID
    * @returns {Promise<boolean>}

@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -10,6 +8,7 @@ import {
   Image,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { TextInput, Text, useTheme } from 'react-native-paper';
 import { useApp } from '../context/AppContext';
 import TimeInput from '../components/TimeInput';
 import { validateScene } from '../utils/validation';
@@ -31,17 +30,24 @@ const EditSceneScreen = () => {
   const [loading, setLoading] = useState(false);
   const [isFictional, setIsFictional] = useState(false);
   const [imageUrl, setImageUrl] = useState(scene.imageUrl || null);
+  const [parentEventDate, setParentEventDate] = useState(null);
 
   useEffect(() => {
     const loadData = async () => {
       const event = await timelineService.getEventById(scene.eventId);
       if (event) {
+        let timelineIsFictional = false;
         const era = await timelineService.getEraById(event.eraId);
         if (era) {
           const timeline = await timelineService.getTimelineById(era.timelineId);
           if (timeline) {
+            timelineIsFictional = timeline.isFictional;
             setIsFictional(timeline.isFictional);
           }
+        }
+        // Set parent event's date as default for scenes in historical timelines
+        if (event.time && !timelineIsFictional) {
+          setParentEventDate(event.time);
         }
         const scenes = await timelineService.getScenesByEventId(scene.eventId);
         setAvailableScenes(scenes.filter(s => s.id !== scene.id));
@@ -110,7 +116,7 @@ const EditSceneScreen = () => {
           </Text>
         </TouchableOpacity>
 
-        {useRelativePosition ? (
+        {useRelativePosition && (
           <View>
             <Text style={styles.label}>Position Relative To *</Text>
             {availableScenes.length === 0 ? (
@@ -173,7 +179,30 @@ const EditSceneScreen = () => {
               </>
             )}
           </View>
-        ) : (
+        )}
+
+        {isFictional && (
+          <View>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
+              Custom Time (Fictional Timeline) {useRelativePosition && '(Optional)'}
+            </Text>
+            <Text variant="bodySmall" style={styles.hint}>
+              {useRelativePosition
+                ? 'Optionally enter custom time string in addition to relative positioning'
+                : 'Enter custom time string (e.g., "Year 3000", "Before the Great War")'}
+            </Text>
+            <TextInput
+              label="Time"
+              value={time || ''}
+              onChangeText={setTime}
+              mode="outlined"
+              placeholder="e.g., Year 3000"
+              style={styles.input}
+            />
+          </View>
+        )}
+
+        {!isFictional && !useRelativePosition && (
           <TimeInput
             label="Time"
             value={time}
@@ -181,6 +210,8 @@ const EditSceneScreen = () => {
             isFictional={isFictional}
             isRelational={false}
             placeholder="Enter time"
+            showTimeOfDay={!isFictional}
+            defaultValue={parentEventDate}
           />
         )}
 

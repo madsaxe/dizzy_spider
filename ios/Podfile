@@ -38,7 +38,7 @@ target 'TimelineApp' do
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.4'
         
         # Fix RCT-Folly specific issues
-        if target.name == 'RCT-Folly'
+      if target.name == 'RCT-Folly'
           config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
           # iOS SDK 26.1 has clock_gettime and clockid_t, so we should use it
           config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'FOLLY_HAVE_CLOCK_GETTIME=1'

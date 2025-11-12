@@ -50,6 +50,7 @@ const HexagonNode = ({
   zoomLevel = 'eras',
   style = {},
   animatedStyle = null,
+  shouldDarken = false, // Whether to apply darkening overlay
 }) => {
   const {
     title,
@@ -112,7 +113,7 @@ const HexagonNode = ({
     <View style={styles.contentContainer} pointerEvents="box-none">
       {/* Node icon - positioned in upper left corner */}
       {nodeIcon && (
-        <View style={[styles.iconContainer, { backgroundColor: itemColor }]}>
+        <View style={[styles.iconContainer, { backgroundColor: itemColor, opacity: shouldDarken ? 0.5 : 1 }]}>
           <Icon
             source={nodeIcon}
             size={20}
@@ -127,13 +128,13 @@ const HexagonNode = ({
       {/* Title and Description - In bottom half of hexagon */}
       <View style={styles.textContent}>
         {/* Title - centered and lowered, all caps */}
-        <Text style={[styles.title, { fontSize: fontSizes.title }]} numberOfLines={2}>
+        <Text style={[styles.title, { fontSize: fontSizes.title, opacity: shouldDarken ? 0.5 : 1 }]} numberOfLines={2}>
           {title.toUpperCase()}
         </Text>
 
         {/* Description - directly under title */}
         {description && (
-          <Text style={[styles.description, { fontSize: fontSizes.description }]} numberOfLines={3}>
+          <Text style={[styles.description, { fontSize: fontSizes.description, opacity: shouldDarken ? 0.5 : 1 }]} numberOfLines={3}>
             {description}
           </Text>
         )}
@@ -141,12 +142,12 @@ const HexagonNode = ({
 
       {/* Time/Date - Bottom center with padding */}
       {time && (
-        <Text style={[styles.timeText, { color: itemColor, fontSize: fontSizes.time }]}>
+        <Text style={[styles.timeText, { color: itemColor, fontSize: fontSizes.time, opacity: shouldDarken ? 0.5 : 1 }]}>
           {time}
         </Text>
       )}
 
-      {/* Edit Button - Bottom Right */}
+      {/* Edit Button - Top Right */}
       {onEdit && (
         <TouchableOpacity
           style={styles.editButton}
@@ -176,11 +177,12 @@ const HexagonNode = ({
           </ClipPath>
 
           {/* Gradient overlay (transparent top to opaque bottom, darker sooner) */}
+          {/* When shouldDarken is true, increase opacity by 50% (then another 50% = 0.45 * 1.5 = 0.675) */}
           <SvgLinearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
-            <Stop offset="0%" stopColor="#1A1A2E" stopOpacity="0" />
-            <Stop offset="40%" stopColor="#1A1A2E" stopOpacity="0.3" />
-            <Stop offset="70%" stopColor="#1A1A2E" stopOpacity="0.8" />
-            <Stop offset="100%" stopColor="#1A1A2E" stopOpacity="1" />
+            <Stop offset="0%" stopColor="#1A1A2E" stopOpacity={shouldDarken ? "0.2" : "0"} />
+            <Stop offset="40%" stopColor="#1A1A2E" stopOpacity={shouldDarken ? "0.8" : "0.3"} />
+            <Stop offset="70%" stopColor="#1A1A2E" stopOpacity={shouldDarken ? "1" : "0.8"} />
+            <Stop offset="100%" stopColor="#1A1A2E" stopOpacity={shouldDarken ? "1" : "1"} />
           </SvgLinearGradient>
 
           {/* Pattern for remote images */}
@@ -229,10 +231,24 @@ const HexagonNode = ({
           </>
         ) : (
           // Solid color background
-          <Path
-            d={clipPathData}
-            fill="#16213E"
-          />
+          <>
+            <Path
+              d={clipPathData}
+              fill="#16213E"
+            />
+            {/* Gradient overlay for solid color when shouldDarken is true */}
+            {shouldDarken && (
+              <G clipPath={`url(#${clipPathId})`}>
+                <Rect
+                  x="0"
+                  y="0"
+                  width={HEXAGON_SIZE + BORDER_WIDTH}
+                  height={HEXAGON_SIZE + BORDER_WIDTH}
+                  fill={`url(#${gradientId})`}
+                />
+              </G>
+            )}
+          </>
         )}
 
         {/* Border - drawn on top */}
@@ -273,11 +289,12 @@ const HexagonNode = ({
               />
             </Pattern>
             {/* Gradient overlay for local images (darker sooner) */}
+            {/* When shouldDarken is true, increase opacity by 50% (then another 50% = 0.45 * 1.5 = 0.675) */}
             <SvgLinearGradient id={`${gradientId}-local-overlay`} x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor="#1A1A2E" stopOpacity="0" />
-              <Stop offset="40%" stopColor="#1A1A2E" stopOpacity="0.3" />
-              <Stop offset="70%" stopColor="#1A1A2E" stopOpacity="0.8" />
-              <Stop offset="100%" stopColor="#1A1A2E" stopOpacity="1" />
+              <Stop offset="0%" stopColor="#1A1A2E" stopOpacity={shouldDarken ? "0.2" : "0"} />
+              <Stop offset="40%" stopColor="#1A1A2E" stopOpacity={shouldDarken ? "0.8" : "0.3"} />
+              <Stop offset="70%" stopColor="#1A1A2E" stopOpacity={shouldDarken ? "1" : "0.8"} />
+              <Stop offset="100%" stopColor="#1A1A2E" stopOpacity={shouldDarken ? "1" : "1"} />
             </SvgLinearGradient>
           </Defs>
           {/* Local image with clipPath for proper hexagon clipping */}
@@ -442,7 +459,7 @@ const styles = StyleSheet.create({
   },
   editButton: {
     position: 'absolute',
-    bottom: 12,
+    top: 12,
     right: 12,
     paddingHorizontal: 8,
     paddingVertical: 4,

@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -10,6 +8,8 @@ import {
   Image,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TextInput, Button, Text, Card, useTheme } from 'react-native-paper';
 import { useApp } from '../context/AppContext';
 import TimeInput from '../components/TimeInput';
 import { validateEra } from '../utils/validation';
@@ -27,6 +27,8 @@ const EditEraScreen = () => {
   const [endTime, setEndTime] = useState(era.endTime || null);
   const [loading, setLoading] = useState(false);
   const [isFictional, setIsFictional] = useState(false);
+  const [existingEras, setExistingEras] = useState([]);
+  const [positionRelativeTo, setPositionRelativeTo] = useState(era.positionRelativeTo || null);
   const [imageUrl, setImageUrl] = useState(era.imageUrl || null);
 
   useEffect(() => {
@@ -34,10 +36,16 @@ const EditEraScreen = () => {
       const timeline = await timelineService.getTimelineById(era.timelineId);
       if (timeline) {
         setIsFictional(timeline.isFictional);
+        
+        // Load existing eras for relative positioning (fictional timelines only)
+        if (timeline.isFictional) {
+          const eras = await timelineService.getErasByTimelineId(era.timelineId);
+          setExistingEras(eras.filter(e => e.id !== era.id));
+        }
       }
     };
     loadTimeline();
-  }, [era.timelineId]);
+  }, [era.timelineId, era.id]);
 
   const handleUpdate = async () => {
     const eraData = {
@@ -45,6 +53,8 @@ const EditEraScreen = () => {
       description: description.trim(),
       startTime: startTime || null,
       endTime: endTime || null,
+      positionRelativeTo: isFictional && existingEras.length > 0 ? positionRelativeTo : null,
+      positionType: isFictional && existingEras.length > 0 && positionRelativeTo ? 'after' : null,
       imageUrl: imageUrl || null,
     };
 
@@ -89,15 +99,79 @@ const EditEraScreen = () => {
           numberOfLines={4}
         />
 
-        <TimeInput
-          label="Time Range"
-          mode="range"
-          isFictional={isFictional}
-          startValue={startTime}
-          endValue={endTime}
-          onStartTimeChange={setStartTime}
-          onEndTimeChange={setEndTime}
-        />
+        {isFictional && existingEras.length > 0 && (
+          <View>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
+              Position After Era (Optional)
+            </Text>
+            <Text variant="bodySmall" style={styles.hint}>
+              Select an era to position this era after it, or leave blank and specify custom times below.
+            </Text>
+            {existingEras.map((existingEra) => (
+              <Card
+                key={existingEra.id}
+                style={[
+                  styles.eraOption,
+                  positionRelativeTo === existingEra.id && styles.eraOptionSelected,
+                ]}
+                onPress={() => setPositionRelativeTo(existingEra.id === positionRelativeTo ? null : existingEra.id)}
+              >
+                <Card.Content>
+                  <Text
+                    variant="bodyLarge"
+                    style={[
+                      styles.eraOptionText,
+                      positionRelativeTo === existingEra.id && styles.eraOptionTextSelected,
+                    ]}
+                  >
+                    {existingEra.title}
+                  </Text>
+                </Card.Content>
+              </Card>
+            ))}
+          </View>
+        )}
+
+        {isFictional && (
+          <View>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
+              Custom Time (Fictional Timeline) {positionRelativeTo && '(Optional)'}
+            </Text>
+            <Text variant="bodySmall" style={styles.hint}>
+              {positionRelativeTo 
+                ? 'Optionally enter custom time strings in addition to relative positioning'
+                : 'Enter custom time strings (e.g., "Year 3000", "Before the Great War")'}
+            </Text>
+            <TextInput
+              label="Start Time"
+              value={startTime || ''}
+              onChangeText={setStartTime}
+              mode="outlined"
+              placeholder="e.g., Year 3000"
+              style={styles.input}
+            />
+            <TextInput
+              label="End Time (Optional)"
+              value={endTime || ''}
+              onChangeText={setEndTime}
+              mode="outlined"
+              placeholder="e.g., Year 3100"
+              style={styles.input}
+            />
+          </View>
+        )}
+
+        {!isFictional && (
+          <TimeInput
+            label="Time Range"
+            mode="range"
+            isFictional={isFictional}
+            startValue={startTime}
+            endValue={endTime}
+            onStartTimeChange={setStartTime}
+            onEndTimeChange={setEndTime}
+          />
+        )}
 
         <Text style={styles.label}>Hero Image (Optional)</Text>
         {imageUrl ? (
@@ -154,7 +228,7 @@ const EditEraScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#1A1A2E',
   },
   content: {
     padding: 20,
@@ -164,19 +238,43 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
     marginTop: 16,
-    color: '#333',
+    color: '#E0E0E0',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+    marginTop: 24,
+    color: '#FFFFFF',
+  },
+  hint: {
+    fontSize: 12,
+    marginBottom: 12,
+    color: '#9CA3AF',
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
+    marginBottom: 16,
   },
   textArea: {
     height: 100,
     textAlignVertical: 'top',
+  },
+  eraOption: {
+    marginBottom: 8,
+    backgroundColor: '#16213E',
+    borderWidth: 1,
+    borderColor: '#2A2A3E',
+  },
+  eraOptionSelected: {
+    borderColor: '#8B5CF6',
+    backgroundColor: '#2A2A3E',
+  },
+  eraOptionText: {
+    color: '#E0E0E0',
+  },
+  eraOptionTextSelected: {
+    color: '#8B5CF6',
+    fontWeight: '600',
   },
   updateButton: {
     backgroundColor: '#007AFF',
