@@ -12,12 +12,15 @@ import { Text, Button, Card, FAB, useTheme, IconButton } from 'react-native-pape
 import { useApp } from '../context/AppContext';
 import { useNavigation } from '@react-navigation/native';
 import seedDataService from '../services/seedDataService';
+import csvService from '../services/csvService';
+import { useAuth } from '../context/AuthContext';
 
 const TimelineListScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { timelines, loading, refreshTimelines, deleteTimeline, userProgress } = useApp();
+  const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const swipeableRefs = useRef({});
 
@@ -113,6 +116,11 @@ const TimelineListScreen = () => {
   };
 
   const handlePopulateExamples = async () => {
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to create example timelines');
+      return;
+    }
+
     Alert.alert(
       'Populate Example Timelines',
       'This will create two example timelines: one historical (World War II) and one fictional (The Chronicles of Eldoria). Continue?',
@@ -122,7 +130,7 @@ const TimelineListScreen = () => {
           text: 'Create Examples',
           onPress: async () => {
             try {
-              await seedDataService.populateAllExamples();
+              await seedDataService.populateAllExamples(user.uid);
               await refreshTimelines();
               Alert.alert('Success', 'Example timelines created successfully!');
             } catch (error) {
@@ -133,6 +141,19 @@ const TimelineListScreen = () => {
         },
       ]
     );
+  };
+
+  const handleExportTimeline = async (timelineId) => {
+    try {
+      await csvService.exportAndShareTimeline(timelineId);
+    } catch (error) {
+      console.error('Error exporting timeline:', error);
+      Alert.alert('Export Failed', error.message || 'Failed to export timeline');
+    }
+  };
+
+  const handleImportTimeline = () => {
+    navigation.navigate('ImportTimeline');
   };
 
   const renderTimelineItem = ({ item }) => {
@@ -187,6 +208,20 @@ const TimelineListScreen = () => {
           <Button
             mode="text"
             onPress={() => {
+              // Close any open swipeables before exporting
+              Object.values(swipeableRefs.current).forEach((ref) => {
+                if (ref) ref.close();
+              });
+              handleExportTimeline(item.id);
+            }}
+            textColor={theme.colors.primary}
+            icon="export"
+          >
+            Export
+          </Button>
+          <Button
+            mode="text"
+            onPress={() => {
               // Close any open swipeables before deleting
               Object.values(swipeableRefs.current).forEach((ref) => {
                 if (ref) ref.close();
@@ -216,6 +251,16 @@ const TimelineListScreen = () => {
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
         <View style={styles.headerTop}>
           <Text variant="headlineSmall" style={styles.headerTitle}>My Timelines</Text>
+          <View style={styles.headerButtons}>
+            <Button
+              mode="outlined"
+              onPress={handleImportTimeline}
+              style={styles.importButton}
+              icon="upload"
+              compact
+            >
+              Import
+            </Button>
           <Button
             mode="contained"
             onPress={handlePopulateExamples}
@@ -223,6 +268,7 @@ const TimelineListScreen = () => {
           >
             📚 Examples
           </Button>
+          </View>
         </View>
         <View style={styles.progressContainer}>
           <Text variant="bodySmall" style={styles.pointsText}>⭐ {userProgress.points} points</Text>
@@ -235,7 +281,7 @@ const TimelineListScreen = () => {
         data={timelines}
         renderItem={renderTimelineItem}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 100 }]} // Add padding to avoid FAB overlap
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text variant="titleLarge" style={styles.emptyText}>No timelines yet</Text>
@@ -263,11 +309,6 @@ const TimelineListScreen = () => {
         refreshing={refreshing}
         onRefresh={handleRefresh}
       />
-      <FAB
-        icon="plus"
-        style={styles.fab}
-        onPress={() => navigation.navigate('CreateTimeline')}
-      />
       {/* Temporary Delete All Button */}
       <View style={[styles.deleteAllContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <Button
@@ -280,6 +321,12 @@ const TimelineListScreen = () => {
           Delete All
         </Button>
       </View>
+      <FAB
+        icon="plus"
+        style={styles.fab}
+        onPress={() => navigation.navigate('CreateTimeline')}
+        label="Create"
+      />
     </View>
   );
 };
@@ -303,8 +350,16 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
   },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  importButton: {
+    marginRight: 4,
+  },
   exampleButton: {
-    marginLeft: 8,
+    marginLeft: 4,
   },
   progressContainer: {
     flexDirection: 'row',
@@ -377,7 +432,9 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 24,
-    bottom: 24,
+    bottom: 80, // Move up to avoid overlap with Delete All button
+    zIndex: 1000, // Ensure FAB is above other elements
+    elevation: 8, // Android elevation
   },
   rightAction: {
     flex: 1,

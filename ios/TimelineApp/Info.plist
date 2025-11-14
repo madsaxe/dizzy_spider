@@ -78,5 +78,18 @@
 	<array>
 		<string>MaterialCommunityIcons.ttf</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.timelineapp.google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.1045184350964-rqcqtnfp4642lok73l8c9kasifuqs807</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

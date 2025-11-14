@@ -21,13 +21,15 @@ class SeedDataService {
 
   /**
    * Create an example historical timeline with 5+ eras
+   * @param {string} userId - User ID to assign to the timeline
    */
-  async createExampleHistoricalTimeline() {
+  async createExampleHistoricalTimeline(userId = null) {
     // Create timeline
     const timeline = await timelineService.createTimeline({
       title: 'World War II Timeline',
       description: 'A comprehensive timeline of major events during World War II',
       isFictional: false,
+      userId: userId,
     });
 
     // Era 1: Pre-War Period
@@ -572,13 +574,15 @@ class SeedDataService {
 
   /**
    * Create an example fictional timeline with 5+ eras
+   * @param {string} userId - User ID to assign to the timeline
    */
-  async createExampleFictionalTimeline() {
+  async createExampleFictionalTimeline(userId = null) {
     // Create timeline
     const timeline = await timelineService.createTimeline({
       title: 'The Chronicles of Eldoria',
       description: 'An epic fantasy timeline following the rise and fall of kingdoms across ages',
       isFictional: true,
+      userId: userId,
     });
 
     // Era 1: The Age of Legends
@@ -862,11 +866,12 @@ class SeedDataService {
 
   /**
    * Populate all example timelines
+   * @param {string} userId - User ID to assign to the timelines
    */
-  async populateAllExamples() {
+  async populateAllExamples(userId = null) {
     const timelines = [];
-    timelines.push(await this.createExampleHistoricalTimeline());
-    timelines.push(await this.createExampleFictionalTimeline());
+    timelines.push(await this.createExampleHistoricalTimeline(userId));
+    timelines.push(await this.createExampleFictionalTimeline(userId));
     return timelines;
   }
 }

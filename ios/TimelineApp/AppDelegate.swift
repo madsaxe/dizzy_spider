@@ -1,5 +1,7 @@
 import UIKit
 import React
+import FirebaseCore
+import GoogleSignIn
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -10,6 +12,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // Initialize Firebase
+    FirebaseApp.configure()
+    
     // Initialize bridge with delegate to ensure all native modules (including Reanimated) are loaded
     bridge = RCTBridge(delegate: self, launchOptions: launchOptions)
     
@@ -68,6 +73,40 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     window?.layoutIfNeeded()
     
     return true
+  }
+  
+  // Handle URL callbacks - combines Google Sign-In, React Native Linking, and custom deep links
+  func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    // Try Google Sign-In first (for OAuth callbacks)
+    if GIDSignIn.sharedInstance.handle(url) {
+      return true
+    }
+    
+    // Then try React Native Linking (for deep links like timelineapp://)
+    if let bridge = bridge {
+      return RCTLinkingManager.application(app, open: url, options: options)
+    }
+    
+    return false
+  }
+  
+  // Handle URL callbacks when app is opened from a URL (cold start)
+  func application(
+    _ application: UIApplication,
+    continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+  ) -> Bool {
+    // Handle Universal Links
+    if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+       let url = userActivity.webpageURL {
+      return RCTLinkingManager.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    }
+    
+    return false
   }
 }
 

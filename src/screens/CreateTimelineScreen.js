@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,17 +9,32 @@ import {
   Alert,
   Switch,
 } from 'react-native';
+import { Button, useTheme } from 'react-native-paper';
 import { useApp } from '../context/AppContext';
 import { useNavigation } from '@react-navigation/native';
 import { validateTimeline } from '../utils/validation';
 
 const CreateTimelineScreen = () => {
   const navigation = useNavigation();
+  const theme = useTheme();
   const { createTimeline } = useApp();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isFictional, setIsFictional] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <Button
+          onPress={() => navigation.goBack()}
+          textColor={theme.colors.primary}
+        >
+          Cancel
+        </Button>
+      ),
+    });
+  }, [navigation, theme]);
 
   const handleCreate = async () => {
     const timelineData = {
@@ -99,15 +114,23 @@ const CreateTimelineScreen = () => {
             : 'This timeline uses real dates (e.g., "January 1, 2024")'}
         </Text>
 
-        <TouchableOpacity
-          style={[styles.createButton, loading && styles.createButtonDisabled]}
-          onPress={handleCreate}
-          disabled={loading}
-        >
-          <Text style={styles.createButtonText}>
-            {loading ? 'Creating...' : 'Create Timeline'}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.buttonRow}>
+          <TouchableOpacity
+            style={[styles.cancelButtonContent, styles.cancelButtonTouchable]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.createButton, loading && styles.createButtonDisabled]}
+            onPress={handleCreate}
+            disabled={loading}
+          >
+            <Text style={styles.createButtonText}>
+              {loading ? 'Creating...' : 'Create Timeline'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </ScrollView>
   );
@@ -153,12 +176,35 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontStyle: 'italic',
   },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 32,
+    gap: 12,
+  },
+  cancelButtonTouchable: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+  },
+  cancelButtonContent: {
+    // Additional styles if needed
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 18,
+    fontWeight: '600',
+  },
   createButton: {
     backgroundColor: '#007AFF',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 32,
+    flex: 1,
   },
   createButtonDisabled: {
     backgroundColor: '#ccc',

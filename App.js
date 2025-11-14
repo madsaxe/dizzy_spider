@@ -1,5 +1,5 @@
 import React from 'react';
-import { StatusBar, View, StyleSheet } from 'react-native';
+import { StatusBar, View, StyleSheet, Text } from 'react-native';
 import { NavigationContainer, DarkTheme as NavigationDarkTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { Provider as PaperProvider, MD3DarkTheme } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { AppProvider } from './src/context/AppContext';
 import { TimelineThemeProvider } from './src/context/TimelineThemeContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import TimelineListScreen from './src/screens/TimelineListScreen';
 import CreateTimelineScreen from './src/screens/CreateTimelineScreen';
 import TimelineDetailScreen from './src/screens/TimelineDetailScreen';
@@ -17,6 +18,10 @@ import EditEraScreen from './src/screens/EditEraScreen';
 import EditEventScreen from './src/screens/EditEventScreen';
 import EditSceneScreen from './src/screens/EditSceneScreen';
 import TimelineSettingsScreen from './src/screens/TimelineSettingsScreen';
+import LoginScreen from './src/screens/LoginScreen';
+import RegisterScreen from './src/screens/RegisterScreen';
+import ImportTimelineScreen from './src/screens/ImportTimelineScreen';
+import SharedTimelineScreen from './src/screens/SharedTimelineScreen';
 
 const Stack = createStackNavigator();
 
@@ -55,22 +60,21 @@ const navigationTheme = {
   },
 };
 
-const App = () => {
+const AppNavigator = () => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
   return (
-    <SafeAreaProvider>
-      <PaperProvider 
-        theme={paperTheme}
-        settings={{
-          icon: (props) => <MaterialCommunityIcons {...props} />,
-        }}
-      >
-        <View style={styles.rootContainer}>
-          <StatusBar barStyle="light-content" backgroundColor="#1A1A2E" translucent={false} />
-          <AppProvider>
-            <TimelineThemeProvider>
               <NavigationContainer theme={navigationTheme}>
           <Stack.Navigator
-            initialRouteName="TimelineList"
+        initialRouteName={user ? "TimelineList" : "Login"}
             screenOptions={{
               headerStyle: {
                 backgroundColor: '#1A1A2E',
@@ -86,6 +90,8 @@ const App = () => {
               },
             }}
           >
+        {user ? (
+          <>
             <Stack.Screen
               name="TimelineList"
               component={TimelineListScreen}
@@ -136,10 +142,54 @@ const App = () => {
             component={TimelineSettingsScreen}
             options={{ title: 'Timeline Settings' }}
           />
+            <Stack.Screen
+              name="ImportTimeline"
+              component={ImportTimelineScreen}
+              options={{ title: 'Import Timeline' }}
+            />
+            <Stack.Screen
+              name="SharedTimeline"
+              component={SharedTimelineScreen}
+              options={{ headerShown: false }}
+            />
+          </>
+        ) : (
+          <>
+            <Stack.Screen
+              name="Login"
+              component={LoginScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="Register"
+              component={RegisterScreen}
+              options={{ headerShown: false }}
+            />
+          </>
+        )}
         </Stack.Navigator>
       </NavigationContainer>
+  );
+};
+
+const App = () => {
+  return (
+    <SafeAreaProvider>
+      <PaperProvider 
+        theme={paperTheme}
+        settings={{
+          icon: (props) => <MaterialCommunityIcons {...props} />,
+        }}
+      >
+        <View style={styles.rootContainer}>
+          <StatusBar barStyle="light-content" backgroundColor="#1A1A2E" translucent={false} />
+          <AuthProvider>
+            <AppProvider>
+              <TimelineThemeProvider>
+                <AppNavigator />
       </TimelineThemeProvider>
     </AppProvider>
+          </AuthProvider>
       </View>
       </PaperProvider>
     </SafeAreaProvider>
@@ -152,6 +202,16 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: '#1A1A2E',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1A1A2E',
+  },
+  loadingText: {
+    color: '#E0E0E0',
+    fontSize: 16,
   },
 });
 
