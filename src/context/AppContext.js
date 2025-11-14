@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import timelineService from '../services/timelineService';
 import gamificationService from '../services/gamificationService';
+import { useAuth } from './AuthContext';
 
 const AppContext = createContext();
 
@@ -13,6 +14,7 @@ export const useApp = () => {
 };
 
 export const AppProvider = ({ children }) => {
+  const { user } = useAuth();
   const [timelines, setTimelines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [userProgress, setUserProgress] = useState({
@@ -20,16 +22,46 @@ export const AppProvider = ({ children }) => {
     achievements: [],
   });
 
-  // Load initial data
+  // Load initial data when user changes
   useEffect(() => {
-    loadData();
-  }, []);
+    if (user) {
+      migrateAndLoadData();
+    } else {
+      setTimelines([]);
+      setLoading(false);
+    }
+  }, [user]);
+
+  // Migrate existing timelines to authenticated user
+  const migrateAndLoadData = async () => {
+    try {
+      setLoading(true);
+      
+      // Get all timelines (including those without userId)
+      const allTimelines = await timelineService.getAllTimelines(null);
+      const unassignedTimelines = allTimelines.filter(t => !t.userId);
+      
+      // Migrate unassigned timelines to current user
+      if (unassignedTimelines.length > 0 && user?.uid) {
+        for (const timeline of unassignedTimelines) {
+          await timelineService.updateTimeline(timeline.id, { userId: user.uid });
+        }
+      }
+      
+      // Now load user's timelines
+      await loadData();
+    } catch (error) {
+      console.error('Error migrating data:', error);
+      // Still try to load data even if migration fails
+      await loadData();
+    }
+  };
 
   const loadData = async () => {
     try {
       setLoading(true);
       const [timelinesData, progress] = await Promise.all([
-        timelineService.getAllTimelines(),
+        timelineService.getAllTimelines(user?.uid),
         gamificationService.getUserProgress(),
       ]);
       setTimelines(timelinesData);
@@ -42,7 +74,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const refreshTimelines = async () => {
-    const timelinesData = await timelineService.getAllTimelines();
+    const timelinesData = await timelineService.getAllTimelines(user?.uid);
     setTimelines(timelinesData);
   };
 
@@ -52,7 +84,12 @@ export const AppProvider = ({ children }) => {
   };
 
   const createTimeline = async (timelineData) => {
-    const timeline = await timelineService.createTimeline(timelineData);
+    // Add userId to timeline data
+    const timelineWithUser = {
+      ...timelineData,
+      userId: user?.uid || null,
+    };
+    const timeline = await timelineService.createTimeline(timelineWithUser);
     await refreshTimelines();
     
     // Check achievements

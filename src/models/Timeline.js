@@ -1,6 +1,7 @@
 class Timeline {
   constructor(data = {}) {
     this.id = data.id || this.generateId();
+    this.userId = data.userId || null; // User ID for ownership
     this.title = data.title || '';
     this.description = data.description || '';
     this.createdAt = data.createdAt || new Date().toISOString();
@@ -14,6 +15,7 @@ class Timeline {
   toJSON() {
     return {
       id: this.id,
+      userId: this.userId,
       title: this.title,
       description: this.description,
       createdAt: this.createdAt,

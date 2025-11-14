@@ -9,12 +9,20 @@ class TimelineService {
   // ============ Timeline CRUD ============
 
   /**
-   * Get all timelines
+   * Get all timelines for the current user
+   * @param {string} userId - User ID to filter timelines
    * @returns {Promise<Array<Timeline>>}
    */
-  async getAllTimelines() {
+  async getAllTimelines(userId = null) {
     const timelines = await storageService.getTimelines();
-    return timelines.map(t => Timeline.fromJSON(t));
+    const allTimelines = timelines.map(t => Timeline.fromJSON(t));
+    
+    // If userId is provided, filter by userId
+    // If userId is null, return timelines without userId (for migration)
+    if (userId !== null) {
+      return allTimelines.filter(t => t.userId === userId);
+    }
+    return allTimelines;
   }
 
   /**

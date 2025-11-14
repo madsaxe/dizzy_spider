@@ -16,6 +16,9 @@ import { TimelineZoomProvider, useTimelineZoom } from '../context/TimelineZoomCo
 import TimelineVisualization from '../components/TimelineVisualization';
 import timelineService from '../services/timelineService';
 import { getLocalImage, hasLocalImage } from '../assets/images';
+import sharingService from '../services/sharingService';
+import { useAuth } from '../context/AuthContext';
+import Share from 'react-native-share';
 
 const TimelineDetailScreenContent = () => {
   const route = useRoute();
@@ -23,6 +26,7 @@ const TimelineDetailScreenContent = () => {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { timelineId } = route.params;
+  const { user } = useAuth();
   const { createEra, createEvent, createScene, deleteEra, deleteEvent, deleteScene } = useApp();
   const { zoomLevel, selectedEraId, selectedEventId, zoomIn, zoomInEvent, resetZoom } = useTimelineZoom();
   const [timeline, setTimeline] = useState(null);
@@ -395,9 +399,74 @@ const TimelineDetailScreenContent = () => {
     }
   };
 
-  const handleShare = () => {
-    // Placeholder for share functionality
-    Alert.alert('Share', 'Share functionality coming soon!');
+  const handleShare = async () => {
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to share timelines');
+      return;
+    }
+
+    if (!timeline || timeline.userId !== user.uid) {
+      Alert.alert('Error', 'You can only share timelines you own');
+      return;
+    }
+
+    // Show sharing options dialog
+    Alert.alert(
+      'Share Timeline',
+      'Choose sharing permissions:',
+      [
+        {
+          text: 'View Only',
+          onPress: async () => {
+            try {
+              const shareResult = await sharingService.shareTimeline(timelineId, user.uid, {
+                viewOnly: true,
+                editable: false,
+              });
+              
+              const shareUrl = shareResult.shareUrl;
+              await Share.open({
+                message: `Check out this timeline: ${timeline.title}\n${shareUrl}`,
+                url: shareUrl,
+                title: 'Share Timeline',
+              });
+            } catch (error) {
+              console.error('Error sharing timeline:', error);
+              if (error.message !== 'User did not share') {
+                Alert.alert('Share Failed', error.message || 'Failed to share timeline');
+              }
+            }
+          },
+        },
+        {
+          text: 'Editable',
+          onPress: async () => {
+            try {
+              const shareResult = await sharingService.shareTimeline(timelineId, user.uid, {
+                viewOnly: false,
+                editable: true,
+              });
+              
+              const shareUrl = shareResult.shareUrl;
+              await Share.open({
+                message: `Check out this timeline: ${timeline.title}\n${shareUrl}`,
+                url: shareUrl,
+                title: 'Share Timeline',
+              });
+            } catch (error) {
+              console.error('Error sharing timeline:', error);
+              if (error.message !== 'User did not share') {
+                Alert.alert('Share Failed', error.message || 'Failed to share timeline');
+              }
+            }
+          },
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
   };
 
   return (
