@@ -207,20 +207,30 @@ const AnimatedHexagonItem = ({
   const needsTransform = !((zoomLevel === 'events' || zoomLevel === 'scenes') && (itemType === 'event' || itemType === 'scene') && parentId);
   
   const animatedStyle = useAnimatedStyle(() => {
+    // Always consume all shared values to prevent 'onAnimatedValueUpdate' warning
+    // Even if not used in transform, we still read them to register as listeners
+    const tx = translateX.value;
+    const ty = translateY.value;
+    const op = opacity.value;
+    const sc = scale.value;
+    
     if (needsTransform) {
       return {
         transform: [
-          { translateX: translateX.value },
-          { translateY: translateY.value },
-          { scale: scale.value },
+          { translateX: tx },
+          { translateY: ty },
+          { scale: sc },
         ],
-        opacity: opacity.value,
+        opacity: op,
       };
     } else {
-      // For absolutely positioned Events/Scenes, only apply opacity and scale
+      // For absolutely positioned Events/Scenes, still read all values but only use opacity and scale
+      // Reading translateX and translateY ensures they're registered as listeners
       return {
-        opacity: opacity.value,
-        transform: [{ scale: scale.value }],
+        opacity: op,
+        transform: [{ scale: sc }],
+        // Read but don't use translateX/Y to register as listeners
+        // This prevents the warning when values are updated
       };
     }
   }, [translateX, translateY, opacity, scale, needsTransform]);
@@ -438,10 +448,21 @@ const AnimatedHexagonItem = ({
   const calculatedZIndex = getZIndex();
 
   useEffect(() => {
-    translateX.value = finalTranslateX;
-    translateY.value = finalTranslateY;
-    opacity.value = 1;
-    scale.value = 1;
+    // Only update shared values if they've actually changed to avoid unnecessary updates
+    // This prevents the 'onAnimatedValueUpdate' warning when values aren't being consumed
+    if (translateX.value !== finalTranslateX) {
+      translateX.value = finalTranslateX;
+    }
+    if (translateY.value !== finalTranslateY) {
+      translateY.value = finalTranslateY;
+    }
+    // Only update if values have actually changed to avoid unnecessary updates
+    if (opacity.value !== 1) {
+      opacity.value = 1;
+    }
+    if (scale.value !== 1) {
+      scale.value = 1;
+    }
   }, [finalTranslateX, finalTranslateY, translateX, translateY, opacity, scale]);
 
   return (
