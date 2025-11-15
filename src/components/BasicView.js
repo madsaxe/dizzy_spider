@@ -17,10 +17,11 @@ import { getLocalImage, hasLocalImage } from '../assets/images';
 
 const screenWidth = Dimensions.get('window').width;
 const screenHeight = Dimensions.get('window').height;
-const ERA_HEIGHT = screenHeight * 0.30; // 30% of screen
-const EVENT_HEIGHT = screenHeight * 0.25; // 25% of screen
-const SCENE_HEIGHT = screenHeight * 0.20; // 20% of screen
+const BASE_ERA_HEIGHT = screenHeight * 0.30; // 30% of screen
+const BASE_EVENT_HEIGHT = screenHeight * 0.25; // 25% of screen
+const BASE_SCENE_HEIGHT = screenHeight * 0.20; // 20% of screen
 const INDENT_WIDTH = 20;
+const MIN_ZOOM = 0.08; // 8% of screen height minimum
 
 const BasicView = ({
   data = [],
@@ -34,7 +35,12 @@ const BasicView = ({
   events = {},
   scenes = {},
   isFictional = false,
+  zoomScale = 1.0, // Zoom scale (0.08 to 1.0, where 0.08 = 8% of screen)
 }) => {
+  // Calculate dynamic heights based on zoom scale
+  const ERA_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_ERA_HEIGHT * zoomScale);
+  const EVENT_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_EVENT_HEIGHT * zoomScale);
+  const SCENE_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_SCENE_HEIGHT * zoomScale);
   const [expandedEras, setExpandedEras] = useState(new Set());
   const [expandedEvents, setExpandedEvents] = useState(new Set());
 
@@ -124,7 +130,7 @@ const BasicView = ({
     return (
       <View key={era.id} style={styles.eraContainer}>
         <TouchableOpacity
-          style={styles.eraBar}
+          style={[styles.eraBar, { height: ERA_HEIGHT }]}
           onPress={() => {
             toggleEra(era.id);
             if (onItemPress) {
@@ -191,7 +197,7 @@ const BasicView = ({
     return (
       <View key={event.id} style={styles.eventContainer}>
         <TouchableOpacity
-          style={styles.eventBar}
+          style={[styles.eventBar, { height: EVENT_HEIGHT }]}
           onPress={() => {
             toggleEvent(event.id);
             if (onItemPress) {
@@ -255,7 +261,7 @@ const BasicView = ({
     return (
       <TouchableOpacity
         key={scene.id}
-        style={styles.sceneBar}
+        style={[styles.sceneBar, { height: SCENE_HEIGHT }]}
         onPress={() => {
           if (onItemPress) {
             onItemPress({ _originalData: { type: 'scene', data: scene } }, index);
@@ -335,7 +341,7 @@ const styles = StyleSheet.create({
   },
   eraBar: {
     width: '100%',
-    height: ERA_HEIGHT,
+    // height is set dynamically via inline style
     justifyContent: 'center',
     paddingHorizontal: 16,
     overflow: 'hidden',
@@ -352,7 +358,7 @@ const styles = StyleSheet.create({
   },
   eventBar: {
     width: screenWidth - INDENT_WIDTH * 2,
-    height: EVENT_HEIGHT,
+    // height is set dynamically via inline style
     justifyContent: 'center',
     paddingHorizontal: 16,
     overflow: 'hidden',
@@ -368,7 +374,7 @@ const styles = StyleSheet.create({
   },
   sceneBar: {
     width: screenWidth - INDENT_WIDTH * 4,
-    height: SCENE_HEIGHT,
+    // height is set dynamically via inline style
     justifyContent: 'center',
     paddingHorizontal: 16,
     marginTop: 4,

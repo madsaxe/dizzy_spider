@@ -7,6 +7,7 @@ import {
   RefreshControl,
   Dimensions,
 } from 'react-native';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -60,6 +61,10 @@ const TimelineVisualization = forwardRef(({
   const [viewMode, setViewMode] = useState('basic'); // 'basic' | 'simple' | 'advanced'
   const [allTimelineItems, setAllTimelineItems] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0); // Used to trigger transition animations
+  const [zoomScale, setZoomScale] = useState(1.0); // Zoom scale for Basic view (0.08 to 1.0)
+  const MIN_ZOOM = 0.08; // 8% of screen height minimum
+  const MAX_ZOOM = 1.0; // 100% (default size)
+  const ZOOM_STEP = 0.1; // Step size for zoom buttons
   
   const {
     zoomLevel,
@@ -81,6 +86,39 @@ const TimelineVisualization = forwardRef(({
   } = useTimelineZoom();
 
   const { theme, getItemColor, getSymbol } = useTimelineTheme();
+
+  // Zoom handlers for Basic view
+  const handleZoomIn = useCallback(() => {
+    setZoomScale(prev => Math.min(MAX_ZOOM, prev + ZOOM_STEP));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoomScale(prev => Math.max(MIN_ZOOM, prev - ZOOM_STEP));
+  }, []);
+
+  // Pinch gesture for Basic view zoom
+  const zoomScaleRef = useRef(zoomScale);
+  useEffect(() => {
+    zoomScaleRef.current = zoomScale;
+  }, [zoomScale]);
+
+  const pinchGesture = useMemo(() => {
+    if (viewMode !== 'basic') return undefined;
+    
+    return Gesture.Pinch()
+      .onStart(() => {
+        // Store initial scale when gesture starts
+        zoomScaleRef.current = zoomScale;
+      })
+      .onUpdate((event) => {
+        const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomScaleRef.current * event.scale));
+        setZoomScale(newScale);
+      })
+      .onEnd(() => {
+        // Clamp to bounds on end
+        setZoomScale(prev => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev)));
+      });
+  }, [viewMode, zoomScale]);
 
   // Animated transition overlay for zoom level changes
   const transitionProgress = useSharedValue(0);
@@ -654,6 +692,25 @@ const TimelineVisualization = forwardRef(({
               <Text style={styles.addButtonNavText}>+ Add Scene</Text>
             </TouchableOpacity>
           )}
+          {/* Zoom controls for Basic view */}
+          {viewMode === 'basic' && (
+            <>
+              <TouchableOpacity
+                style={[styles.zoomButton, zoomScale <= MIN_ZOOM && styles.zoomButtonDisabled]}
+                onPress={handleZoomOut}
+                disabled={zoomScale <= MIN_ZOOM}
+              >
+                <Text style={styles.zoomButtonText}>−</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.zoomButton, zoomScale >= MAX_ZOOM && styles.zoomButtonDisabled]}
+                onPress={handleZoomIn}
+                disabled={zoomScale >= MAX_ZOOM}
+              >
+                <Text style={styles.zoomButtonText}>+</Text>
+              </TouchableOpacity>
+            </>
+          )}
           <TouchableOpacity
             style={styles.viewToggle}
             onPress={() => {
@@ -682,19 +739,22 @@ const TimelineVisualization = forwardRef(({
               )}
               
               {viewMode === 'basic' ? (
-                <BasicView
-                  data={timelineData}
-                  onItemPress={handleTimelineEventPress}
-                  onItemEdit={handleTimelineEventEdit}
-                  onRefresh={loadTimelineData}
-                  refreshing={loading}
-                  colors={theme.itemColors}
-                  showImages={true}
-                  fontSizes={theme.fontSizes}
-                  events={events}
-                  scenes={scenes}
-                  isFictional={isFictional}
-                />
+                <GestureDetector gesture={pinchGesture}>
+                  <BasicView
+                    data={timelineData}
+                    onItemPress={handleTimelineEventPress}
+                    onItemEdit={handleTimelineEventEdit}
+                    onRefresh={loadTimelineData}
+                    refreshing={loading}
+                    colors={theme.itemColors}
+                    showImages={true}
+                    fontSizes={theme.fontSizes}
+                    events={events}
+                    scenes={scenes}
+                    isFictional={isFictional}
+                    zoomScale={zoomScale}
+                  />
+                </GestureDetector>
               ) : viewMode === 'advanced' ? (
                 <AlternatingTimeline
                   ref={alternatingTimelineRef}
@@ -880,6 +940,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.1,
+  },
+  zoomButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: '#1A1A2E',
+    borderRadius: 10,
+    borderWidth: 0.5,
+    borderColor: '#2A2A3E',
+    marginRight: 8,
+    minWidth: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButtonDisabled: {
+    opacity: 0.5,
+  },
+  zoomButtonText: {
+    color: '#8B5CF6',
+    fontSize: 18,
+    fontWeight: '700',
   },
 });
 
