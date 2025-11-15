@@ -16,6 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import timelineService from '../services/timelineService';
 import CardStack from './CardStack';
+import BasicView from './BasicView';
 import { 
   transformToTimelineItems, 
   prepareTimelineData,
@@ -56,7 +57,7 @@ const TimelineVisualization = forwardRef(({
   const [scenes, setScenes] = useState({});
   const [loading, setLoading] = useState(true);
   const [timelineData, setTimelineData] = useState([]);
-  const [viewMode, setViewMode] = useState('simple'); // 'simple' | 'advanced'
+  const [viewMode, setViewMode] = useState('basic'); // 'basic' | 'simple' | 'advanced'
   const [allTimelineItems, setAllTimelineItems] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0); // Used to trigger transition animations
   
@@ -129,7 +130,7 @@ const TimelineVisualization = forwardRef(({
   useEffect(() => {
     // Only run transition animation in advanced view mode
     if (viewMode !== 'advanced') {
-      // Simple view doesn't use transition animations - zoom is executed directly
+      // Basic and Simple views don't use transition animations - zoom is executed directly
       return;
     }
 
@@ -222,8 +223,15 @@ const TimelineVisualization = forwardRef(({
       
       // Filter based on zoom level
       // For H-shape layout (simple view), show all Eras always, and show Events/Scenes for selected parents
+      // For basic view, show all Eras (accordion handles expansion internally)
       let filteredItems;
-      if (viewMode === 'simple') {
+      if (viewMode === 'basic') {
+        // Basic view shows all eras - BasicView handles expansion internally
+        filteredItems = items.filter(item => {
+          const originalData = item._originalData || item;
+          return (originalData.type || item.type) === 'era';
+        });
+      } else if (viewMode === 'simple') {
         // H-shape: show all Eras always, Events for selected Eras, Scenes for selected Events
         // All nodes remain visible, but only selected paths are at full opacity
         filteredItems = items.filter(item => {
@@ -648,10 +656,19 @@ const TimelineVisualization = forwardRef(({
           )}
           <TouchableOpacity
             style={styles.viewToggle}
-            onPress={() => setViewMode(viewMode === 'simple' ? 'advanced' : 'simple')}
+            onPress={() => {
+              // Cycle through: basic -> simple -> advanced -> basic
+              if (viewMode === 'basic') {
+                setViewMode('simple');
+              } else if (viewMode === 'simple') {
+                setViewMode('advanced');
+              } else {
+                setViewMode('basic');
+              }
+            }}
           >
             <Text style={styles.viewToggleText}>
-              {viewMode === 'simple' ? 'Advanced' : 'Simple'}
+              {viewMode === 'basic' ? 'Simple' : viewMode === 'simple' ? 'Advanced' : 'Basic'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -664,7 +681,21 @@ const TimelineVisualization = forwardRef(({
                 <Animated.View style={transitionOverlayStyle} />
               )}
               
-              {viewMode === 'advanced' ? (
+              {viewMode === 'basic' ? (
+                <BasicView
+                  data={timelineData}
+                  onItemPress={handleTimelineEventPress}
+                  onItemEdit={handleTimelineEventEdit}
+                  onRefresh={loadTimelineData}
+                  refreshing={loading}
+                  colors={theme.itemColors}
+                  showImages={true}
+                  fontSizes={theme.fontSizes}
+                  events={events}
+                  scenes={scenes}
+                  isFictional={isFictional}
+                />
+              ) : viewMode === 'advanced' ? (
                 <AlternatingTimeline
                   ref={alternatingTimelineRef}
                   data={timelineData}
