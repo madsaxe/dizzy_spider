@@ -140,23 +140,63 @@ const BasicView = ({
   };
 
   // Drag and drop helper functions
+  const isDraggingRef = useRef(false);
+  const dragStartPosition = useSharedValue({ x: 0, y: 0 });
+
   const handleStartDrag = (item, type, parentId = null) => {
+    isDraggingRef.current = true;
     setDraggedItem({ type, id: item.id, data: item, parentId });
     dragScale.value = withSpring(1.1);
     dragOpacity.value = withSpring(0.7);
+    dragStartPosition.value = { x: 0, y: 0 };
   };
 
   const handleEndDrag = () => {
-    if (!draggedItem) return;
+    if (!isDraggingRef.current) return;
     
+    isDraggingRef.current = false;
     dragScale.value = withSpring(1);
     dragOpacity.value = withSpring(1);
+    dragPosition.value = { x: 0, y: 0 };
     
-    if (dropTarget) {
+    if (dropTarget && draggedItem) {
       handleDrop(draggedItem, dropTarget);
     } else {
       // No drop target, cancel drag
       setDraggedItem(null);
+      setDropTarget(null);
+    }
+  };
+
+  const handleDragUpdate = (event) => {
+    if (!isDraggingRef.current) return;
+    
+    dragPosition.value = {
+      x: event.translationX,
+      y: event.translationY,
+    };
+    
+    // Detect drop target based on position
+    detectDropTarget(event.absoluteX, event.absoluteY);
+  };
+
+  const detectDropTarget = (x, y) => {
+    // Check all item layouts to find which one we're over
+    let foundTarget = null;
+    
+    itemLayouts.current.forEach((layout, key) => {
+      const { type, id, y: layoutY, height } = layout;
+      const midY = layoutY + height / 2;
+      
+      if (y >= layoutY && y <= layoutY + height) {
+        const position = y < midY ? 'above' : 'below';
+        foundTarget = { type, id, position };
+      }
+    });
+    
+    if (foundTarget) {
+      setDropTarget(foundTarget);
+    } else {
       setDropTarget(null);
     }
   };
@@ -221,14 +261,38 @@ const BasicView = ({
   };
 
   const calculateNewOrder = (item, target) => {
-    // This is a simplified version - in a real implementation,
-    // you'd need to get all items at the target level and calculate order
-    // For now, we'll use a simple increment/decrement based on position
-    const currentOrder = item.data.order || 0;
+    // Get all items at the target level
+    let itemsAtLevel = [];
+    
+    if (target.type === 'era') {
+      itemsAtLevel = data
+        .filter(d => {
+          const itemType = d._originalData?.type || d.type;
+          return itemType === 'era';
+        })
+        .map(d => d._originalData?.data || d.data || d)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+    } else if (target.type === 'event') {
+      itemsAtLevel = (events[target.id] || [])
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+    } else if (target.type === 'scene') {
+      itemsAtLevel = (scenes[target.id] || [])
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+    
+    // Find target item index
+    const targetIndex = itemsAtLevel.findIndex(i => i.id === target.id);
+    if (targetIndex === -1) return item.data.order || 0;
+    
+    // Calculate new order based on position
     if (target.position === 'above') {
-      return Math.max(0, currentOrder - 1);
+      // Insert before target
+      const targetOrder = itemsAtLevel[targetIndex].order || 0;
+      return Math.max(0, targetOrder - 1);
     } else {
-      return currentOrder + 1;
+      // Insert after target
+      const targetOrder = itemsAtLevel[targetIndex].order || 0;
+      return targetOrder + 1;
     }
   };
 
@@ -308,29 +372,22 @@ const BasicView = ({
     const isDragging = draggedItem?.id === era.id;
     const isDropTarget = dropTarget?.id === era.id && dropTarget?.type === 'era';
 
-    const dragGesture = Gesture.LongPress()
+    const longPress = Gesture.LongPress()
       .minDuration(300)
       .onStart(() => {
         runOnJS(handleStartDrag)(era, 'era', null);
-      })
-      .onEnd(() => {
-        // After long press, enable pan
       });
 
-    const panGesture = Gesture.Pan()
+    const pan = Gesture.Pan()
+      .enabled(isDraggingRef.current)
       .onUpdate((event) => {
-        if (isDragging) {
-          dragPosition.value = {
-            x: event.translationX,
-            y: event.translationY,
-          };
-        }
+        runOnJS(handleDragUpdate)(event);
       })
       .onEnd(() => {
         runOnJS(handleEndDrag)();
       });
 
-    const composedGesture = Gesture.Simultaneous(dragGesture, panGesture);
+    const composedGesture = Gesture.Simultaneous(longPress, pan);
 
     return (
       <View key={era.id} style={styles.eraContainer}>
@@ -411,19 +468,56 @@ const BasicView = ({
     const hasScenes = eventScenes.length > 0;
     const imageSource = getImageSource(event.imageUrl);
     const backgroundColor = colors.event || '#4CAF50';
+    const isDragging = draggedItem?.id === event.id;
+    const isDropTarget = dropTarget?.id === event.id && dropTarget?.type === 'event';
+
+    const longPress = Gesture.LongPress()
+      .minDuration(300)
+      .onStart(() => {
+        runOnJS(handleStartDrag)(event, 'event', eraId);
+      });
+
+    const pan = Gesture.Pan()
+      .enabled(isDraggingRef.current)
+      .onUpdate((event) => {
+        runOnJS(handleDragUpdate)(event);
+      })
+      .onEnd(() => {
+        runOnJS(handleEndDrag)();
+      });
+
+    const composedGesture = Gesture.Simultaneous(longPress, pan);
 
     return (
-      <View key={event.id} style={styles.eventContainer}>
-        <TouchableOpacity
-          style={[styles.eventBar, { height: EVENT_HEIGHT }]}
-          onPress={() => {
-            toggleEvent(event.id);
-            if (onItemPress) {
-              onItemPress({ _originalData: { type: 'event', data: event } }, index);
-            }
-          }}
-          activeOpacity={0.8}
-        >
+      <View 
+        key={event.id} 
+        style={styles.eventContainer}
+        onLayout={(event) => {
+          const { y, height } = event.nativeEvent.layout;
+          itemLayouts.current.set(`event-${event.id}`, { type: 'event', id: event.id, y, height });
+        }}
+      >
+        <GestureDetector gesture={composedGesture}>
+          <Animated.View
+            style={[
+              styles.eventBar,
+              { height: EVENT_HEIGHT },
+              isDragging && draggedItemStyle,
+              isDropTarget && styles.dropTarget,
+            ]}
+          >
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              onPress={() => {
+                if (!isDragging) {
+                  toggleEvent(event.id);
+                  if (onItemPress) {
+                    onItemPress({ _originalData: { type: 'event', data: event } }, index);
+                  }
+                }
+              }}
+              activeOpacity={0.8}
+            >
           {imageSource && (
             <Image
               source={imageSource}
@@ -475,18 +569,54 @@ const BasicView = ({
   const renderScene = (scene, index, eventId) => {
     const imageSource = getImageSource(scene.imageUrl);
     const backgroundColor = colors.scene || '#FF9800';
+    const isDragging = draggedItem?.id === scene.id;
+    const isDropTarget = dropTarget?.id === scene.id && dropTarget?.type === 'scene';
+
+    const longPress = Gesture.LongPress()
+      .minDuration(300)
+      .onStart(() => {
+        runOnJS(handleStartDrag)(scene, 'scene', eventId);
+      });
+
+    const pan = Gesture.Pan()
+      .enabled(isDraggingRef.current)
+      .onUpdate((event) => {
+        runOnJS(handleDragUpdate)(event);
+      })
+      .onEnd(() => {
+        runOnJS(handleEndDrag)();
+      });
+
+    const composedGesture = Gesture.Simultaneous(longPress, pan);
 
     return (
-      <TouchableOpacity
+      <View
         key={scene.id}
-        style={[styles.sceneBar, { height: SCENE_HEIGHT }]}
-        onPress={() => {
-          if (onItemPress) {
-            onItemPress({ _originalData: { type: 'scene', data: scene } }, index);
-          }
+        onLayout={(event) => {
+          const { y, height } = event.nativeEvent.layout;
+          itemLayouts.current.set(`scene-${scene.id}`, { type: 'scene', id: scene.id, y, height });
         }}
-        activeOpacity={0.8}
       >
+        <GestureDetector gesture={composedGesture}>
+          <Animated.View
+            style={[
+              styles.sceneBar,
+              { height: SCENE_HEIGHT },
+              isDragging && draggedItemStyle,
+              isDropTarget && styles.dropTarget,
+            ]}
+          >
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              onPress={() => {
+                if (!isDragging) {
+                  if (onItemPress) {
+                    onItemPress({ _originalData: { type: 'scene', data: scene } }, index);
+                  }
+                }
+              }}
+              activeOpacity={0.8}
+            >
         {imageSource && (
           <Image
             source={imageSource}
