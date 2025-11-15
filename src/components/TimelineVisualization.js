@@ -102,6 +102,15 @@ const TimelineVisualization = forwardRef(({
     zoomScaleRef.current = zoomScale;
   }, [zoomScale]);
 
+  // Wrapper function to update zoom scale from JS thread
+  const updateZoomScale = useCallback((newScale) => {
+    setZoomScale(newScale);
+  }, []);
+
+  const clampZoomScale = useCallback(() => {
+    setZoomScale(prev => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev)));
+  }, []);
+
   const pinchGesture = useMemo(() => {
     if (viewMode !== 'basic') return undefined;
     
@@ -112,13 +121,13 @@ const TimelineVisualization = forwardRef(({
       })
       .onUpdate((event) => {
         const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomScaleRef.current * event.scale));
-        setZoomScale(newScale);
+        runOnJS(updateZoomScale)(newScale);
       })
       .onEnd(() => {
         // Clamp to bounds on end
-        setZoomScale(prev => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev)));
+        runOnJS(clampZoomScale)();
       });
-  }, [viewMode, zoomScale]);
+  }, [viewMode, zoomScale, updateZoomScale, clampZoomScale]);
 
   // Animated transition overlay for zoom level changes
   const transitionProgress = useSharedValue(0);
