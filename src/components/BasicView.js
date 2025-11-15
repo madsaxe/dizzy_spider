@@ -425,12 +425,12 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   barTime: {
-    fontSize: 12,
+    fontSize: 18, // Increased size
     color: '#FFFFFF',
-    fontWeight: '500',
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    fontWeight: '800', // Bolder
+    textShadowColor: 'rgba(0, 0, 0, 0.8)', // Stronger shadow for readability
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3, // Increased shadow radius
   },
   expandIndicator: {
     flexDirection: 'row',
