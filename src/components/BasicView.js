@@ -383,10 +383,10 @@ const styles = StyleSheet.create({
   backgroundImage: {
     position: 'absolute',
     top: 0,
-    left: -10, // Extend 10px beyond left bound
-    right: -10, // Extend 10px beyond right bound
+    left: -20, // Extend 20px beyond left bound
+    right: -20, // Extend 20px beyond right bound
     bottom: 0,
-    width: screenWidth + 20, // Extend beyond bounds
+    width: screenWidth + 40, // Extend 40px total beyond bounds
     height: '100%',
   },
   colorOverlay: {
