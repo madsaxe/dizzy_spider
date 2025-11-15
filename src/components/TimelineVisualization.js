@@ -97,18 +97,28 @@ const TimelineVisualization = forwardRef(({
   }, []);
 
   // Pinch gesture for Basic view zoom
-  const zoomScaleRef = useRef(zoomScale);
+  // Use shared value to track initial zoom scale for gesture
+  const initialZoomScale = useSharedValue(zoomScale);
+  const currentZoomScaleRef = useRef(zoomScale);
+  
+  // Update ref and shared value when zoomScale changes
   useEffect(() => {
-    zoomScaleRef.current = zoomScale;
-  }, [zoomScale]);
+    currentZoomScaleRef.current = zoomScale;
+    initialZoomScale.value = zoomScale;
+  }, [zoomScale, initialZoomScale]);
 
   // Wrapper function to update zoom scale from JS thread
   const updateZoomScale = useCallback((newScale) => {
     setZoomScale(newScale);
+    currentZoomScaleRef.current = newScale;
   }, []);
 
   const clampZoomScale = useCallback(() => {
-    setZoomScale(prev => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev)));
+    setZoomScale(prev => {
+      const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev));
+      currentZoomScaleRef.current = clamped;
+      return clamped;
+    });
   }, []);
 
   const pinchGesture = useMemo(() => {
@@ -116,18 +126,25 @@ const TimelineVisualization = forwardRef(({
     
     return Gesture.Pinch()
       .onStart(() => {
-        // Store initial scale when gesture starts
-        zoomScaleRef.current = zoomScale;
+        // The shared value should already have the current zoom scale
+        // from the useEffect that keeps it in sync
+        // No need to set it here as it's already current
       })
       .onUpdate((event) => {
-        const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomScaleRef.current * event.scale));
+        // event.scale starts at 1.0 when gesture begins and changes from there
+        // Use the shared value which was set before gesture started
+        const baseScale = initialZoomScale.value;
+        const newScale = Math.max(
+          MIN_ZOOM, 
+          Math.min(MAX_ZOOM, baseScale * event.scale)
+        );
         runOnJS(updateZoomScale)(newScale);
       })
       .onEnd(() => {
         // Clamp to bounds on end
         runOnJS(clampZoomScale)();
       });
-  }, [viewMode, zoomScale, updateZoomScale, clampZoomScale]);
+  }, [viewMode, updateZoomScale, clampZoomScale, initialZoomScale, getCurrentZoomScale]);
 
   // Animated transition overlay for zoom level changes
   const transitionProgress = useSharedValue(0);
