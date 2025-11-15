@@ -97,46 +97,45 @@ const TimelineVisualization = forwardRef(({
   }, []);
 
   // Pinch gesture for Basic view zoom
-  // Use shared value to track initial zoom scale for gesture
+  // Use shared value to track initial zoom scale when gesture starts
   const initialZoomScale = useSharedValue(zoomScale);
-  const currentZoomScaleRef = useRef(zoomScale);
+  const currentZoomScale = useSharedValue(zoomScale);
   
-  // Update ref and shared value when zoomScale changes
+  // Keep shared values in sync with zoomScale state
   useEffect(() => {
-    currentZoomScaleRef.current = zoomScale;
+    currentZoomScale.value = zoomScale;
     initialZoomScale.value = zoomScale;
-  }, [zoomScale, initialZoomScale]);
+  }, [zoomScale, currentZoomScale, initialZoomScale]);
 
   // Wrapper function to update zoom scale from JS thread
   const updateZoomScale = useCallback((newScale) => {
     setZoomScale(newScale);
-    currentZoomScaleRef.current = newScale;
-  }, []);
+    currentZoomScale.value = newScale;
+  }, [currentZoomScale]);
 
   const clampZoomScale = useCallback(() => {
     setZoomScale(prev => {
       const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev));
-      currentZoomScaleRef.current = clamped;
+      currentZoomScale.value = clamped;
       return clamped;
     });
-  }, []);
+  }, [currentZoomScale]);
 
   const pinchGesture = useMemo(() => {
     if (viewMode !== 'basic') return undefined;
     
     return Gesture.Pinch()
       .onStart(() => {
-        // The shared value should already have the current zoom scale
-        // from the useEffect that keeps it in sync
-        // No need to set it here as it's already current
+        // Capture the current zoom scale when gesture starts
+        // This will be our base for calculating the new scale
+        initialZoomScale.value = currentZoomScale.value;
       })
       .onUpdate((event) => {
-        // event.scale starts at 1.0 when gesture begins and changes from there
-        // Use the shared value which was set before gesture started
-        const baseScale = initialZoomScale.value;
+        // event.scale is cumulative from gesture start (starts at 1.0)
+        // Multiply the initial scale (captured in onStart) by event.scale
         const newScale = Math.max(
           MIN_ZOOM, 
-          Math.min(MAX_ZOOM, baseScale * event.scale)
+          Math.min(MAX_ZOOM, initialZoomScale.value * event.scale)
         );
         runOnJS(updateZoomScale)(newScale);
       })
@@ -144,7 +143,7 @@ const TimelineVisualization = forwardRef(({
         // Clamp to bounds on end
         runOnJS(clampZoomScale)();
       });
-  }, [viewMode, updateZoomScale, clampZoomScale, initialZoomScale, getCurrentZoomScale]);
+  }, [viewMode, updateZoomScale, clampZoomScale, initialZoomScale, currentZoomScale]);
 
   // Animated transition overlay for zoom level changes
   const transitionProgress = useSharedValue(0);
