@@ -6,12 +6,12 @@ const TimelineThemeContext = createContext();
 const THEME_STORAGE_KEY = 'timeline_theme';
 
 const defaultTheme = {
-  lineColor: '#8B5CF6', // Vibrant purple
+  lineColor: '#8B6F47', // Sepia brown (Roman atlas)
   itemColors: {
-    era: '#06B6D4', // Electric cyan
-    event: '#F59E0B', // Vibrant amber
-    scene: '#EC4899', // Hot pink
-    default: '#8B5CF6', // Purple
+    era: '#C17A5F', // Terracotta red
+    event: '#D4AF37', // Deep gold
+    scene: '#6B8E23', // Olive green
+    default: '#8B6F47', // Sepia brown
   },
   symbols: {
     era: '📅',
@@ -28,9 +28,9 @@ const defaultTheme = {
     item: 12,
     line: 3,
   },
-  backgroundColor: '#1A1A2E', // Dark background
-  cardBackground: '#16213E', // Darker card background
-  textColor: '#E0E0E0', // Light text
+  backgroundColor: '#F4E4BC', // Parchment/cream (Roman atlas)
+  cardBackground: '#FAF0E6', // Light parchment
+  textColor: '#3E2723', // Dark brown/black
 };
 
 export const useTimelineTheme = () => {
