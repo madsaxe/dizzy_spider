@@ -390,7 +390,14 @@ const BasicView = ({
     const composedGesture = Gesture.Simultaneous(longPress, pan);
 
     return (
-      <View key={era.id} style={styles.eraContainer}>
+      <View 
+        key={era.id} 
+        style={styles.eraContainer}
+        onLayout={(event) => {
+          const { y, height } = event.nativeEvent.layout;
+          itemLayouts.current.set(`era-${era.id}`, { type: 'era', id: era.id, y, height });
+        }}
+      >
         <GestureDetector gesture={composedGesture}>
           <Animated.View
             style={[
@@ -518,40 +525,42 @@ const BasicView = ({
               }}
               activeOpacity={0.8}
             >
-          {imageSource && (
-            <Image
-              source={imageSource}
-              style={styles.backgroundImage}
-              resizeMode="cover"
-            />
-          )}
-          <View style={[styles.colorOverlay, { backgroundColor }]} />
-          <View style={styles.barContent}>
-            <View style={styles.barTextContainer}>
-              <Text style={styles.barTitle} numberOfLines={2}>
-                {event.title}
-              </Text>
-              {event.description && (
-                <Text style={styles.barDescription} numberOfLines={2}>
-                  {event.description}
-                </Text>
+              {imageSource && (
+                <Image
+                  source={imageSource}
+                  style={styles.backgroundImage}
+                  resizeMode="cover"
+                />
               )}
-              {event.time && (
-                <Text style={styles.barTime}>
-                  {formatTime(event.time, isFictional)}
-                </Text>
-              )}
-            </View>
-            {hasScenes && (
-              <View style={styles.expandIndicator}>
-                <Text style={styles.childCount}>{eventScenes.length}</Text>
-                <Text style={styles.expandIcon}>
-                  {isExpanded ? '▼' : '▶'}
-                </Text>
+              <View style={[styles.colorOverlay, { backgroundColor }]} />
+              <View style={styles.barContent}>
+                <View style={styles.barTextContainer}>
+                  <Text style={styles.barTitle} numberOfLines={2}>
+                    {event.title}
+                  </Text>
+                  {event.description && (
+                    <Text style={styles.barDescription} numberOfLines={2}>
+                      {event.description}
+                    </Text>
+                  )}
+                  {event.time && (
+                    <Text style={styles.barTime}>
+                      {formatTime(event.time, isFictional)}
+                    </Text>
+                  )}
+                </View>
+                {hasScenes && (
+                  <View style={styles.expandIndicator}>
+                    <Text style={styles.childCount}>{eventScenes.length}</Text>
+                    <Text style={styles.expandIcon}>
+                      {isExpanded ? '▼' : '▶'}
+                    </Text>
+                  </View>
+                )}
               </View>
-            )}
-          </View>
-        </TouchableOpacity>
+            </TouchableOpacity>
+          </Animated.View>
+        </GestureDetector>
 
         {isExpanded && hasScenes && (
           <Animated.View 
@@ -617,32 +626,35 @@ const BasicView = ({
               }}
               activeOpacity={0.8}
             >
-        {imageSource && (
-          <Image
-            source={imageSource}
-            style={styles.backgroundImage}
-            resizeMode="cover"
-          />
-        )}
-        <View style={[styles.colorOverlay, { backgroundColor }]} />
-        <View style={styles.barContent}>
-          <View style={styles.barTextContainer}>
-            <Text style={styles.barTitle} numberOfLines={2}>
-              {scene.title}
-            </Text>
-            {scene.description && (
-              <Text style={styles.barDescription} numberOfLines={2}>
-                {scene.description}
-              </Text>
-            )}
-            {scene.time && (
-              <Text style={styles.barTime}>
-                {formatTime(scene.time, isFictional)}
-              </Text>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
+              {imageSource && (
+                <Image
+                  source={imageSource}
+                  style={styles.backgroundImage}
+                  resizeMode="cover"
+                />
+              )}
+              <View style={[styles.colorOverlay, { backgroundColor }]} />
+              <View style={styles.barContent}>
+                <View style={styles.barTextContainer}>
+                  <Text style={styles.barTitle} numberOfLines={2}>
+                    {scene.title}
+                  </Text>
+                  {scene.description && (
+                    <Text style={styles.barDescription} numberOfLines={2}>
+                      {scene.description}
+                    </Text>
+                  )}
+                  {scene.time && (
+                    <Text style={styles.barTime}>
+                      {formatTime(scene.time, isFictional)}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+        </GestureDetector>
+      </View>
     );
   };
 
