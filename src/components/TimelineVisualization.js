@@ -126,13 +126,16 @@ const TimelineVisualization = forwardRef(({
   const pinchGesture = useMemo(() => {
     if (viewMode !== 'basic') return undefined;
     
+    // Pinch gesture inherently requires 2 fingers, so we don't need minPointers
+    // The gesture handler will automatically only activate with 2+ fingers
     return Gesture.Pinch()
-      .minPointers(2) // Require 2 fingers for pinch (prevents conflict with single-finger drag)
       .onStart(() => {
+        'worklet';
         // Capture the current zoom scale when gesture starts
         initialZoomScale.value = zoomScaleShared.value;
       })
       .onUpdate((event) => {
+        'worklet';
         // event.scale is cumulative from gesture start (starts at 1.0)
         // Update shared value directly for real-time response
         const newScale = Math.max(
