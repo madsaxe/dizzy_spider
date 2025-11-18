@@ -127,6 +127,7 @@ const TimelineVisualization = forwardRef(({
     if (viewMode !== 'basic') return undefined;
     
     return Gesture.Pinch()
+      .minPointers(2) // Require 2 fingers for pinch (prevents conflict with single-finger drag)
       .onStart(() => {
         // Capture the current zoom scale when gesture starts
         initialZoomScale.value = zoomScaleShared.value;
