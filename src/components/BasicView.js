@@ -376,18 +376,16 @@ const BasicView = ({
     const isDropTarget = dropTarget?.id === era.id && dropTarget?.type === 'era';
 
     // Create drag gesture - only works with single finger
-    // Use .minPointers(1).maxPointers(1) to ensure it only activates with one finger
+    // LongPress doesn't support minPointers, but we can use Pan's minPointers/maxPointers
     const longPress = Gesture.LongPress()
       .minDuration(150)
-      .minPointers(1)
-      .maxPointers(1) // Only single finger
       .onStart(() => {
         runOnJS(handleStartDrag)(era, 'era', null);
       });
 
     const pan = Gesture.Pan()
       .minPointers(1)
-      .maxPointers(1) // Only single finger
+      .maxPointers(1) // Only single finger - prevents conflict with 2-finger pinch
       .enabled(isDraggingRef.current)
       .onUpdate((event) => {
         runOnJS(handleDragUpdate)(event);
@@ -396,7 +394,7 @@ const BasicView = ({
         runOnJS(handleEndDrag)();
       });
 
-    // Combine gestures - only works with single finger
+    // Combine gestures - Pan's maxPointers(1) ensures only single finger works
     const composedGesture = Gesture.Simultaneous(longPress, pan);
 
     return (
@@ -490,15 +488,13 @@ const BasicView = ({
     // Create drag gesture - single finger only
     const longPress = Gesture.LongPress()
       .minDuration(150)
-      .minPointers(1)
-      .maxPointers(1)
       .onStart(() => {
         runOnJS(handleStartDrag)(event, 'event', eraId);
       });
 
     const pan = Gesture.Pan()
       .minPointers(1)
-      .maxPointers(1)
+      .maxPointers(1) // Only single finger - prevents conflict with 2-finger pinch
       .enabled(isDraggingRef.current)
       .onUpdate((event) => {
         runOnJS(handleDragUpdate)(event);
@@ -597,15 +593,13 @@ const BasicView = ({
     // Create drag gesture - single finger only
     const longPress = Gesture.LongPress()
       .minDuration(150)
-      .minPointers(1)
-      .maxPointers(1)
       .onStart(() => {
         runOnJS(handleStartDrag)(scene, 'scene', eventId);
       });
 
     const pan = Gesture.Pan()
       .minPointers(1)
-      .maxPointers(1)
+      .maxPointers(1) // Only single finger - prevents conflict with 2-finger pinch
       .enabled(isDraggingRef.current)
       .onUpdate((event) => {
         runOnJS(handleDragUpdate)(event);
