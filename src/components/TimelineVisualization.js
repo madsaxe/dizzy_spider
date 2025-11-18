@@ -6,11 +6,13 @@ import {
   TouchableOpacity,
   RefreshControl,
   Dimensions,
+  Switch,
 } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
+  useAnimatedReaction,
   withTiming,
   Easing,
   runOnJS,
@@ -85,7 +87,7 @@ const TimelineVisualization = forwardRef(({
     canZoomIn,
   } = useTimelineZoom();
 
-  const { theme, getItemColor, getSymbol } = useTimelineTheme();
+  const { theme, themeType, switchThemeType, getItemColor, getSymbol } = useTimelineTheme();
 
   // Zoom handlers for Basic view
   const handleZoomIn = useCallback(() => {
@@ -97,29 +99,31 @@ const TimelineVisualization = forwardRef(({
   }, []);
 
   // Pinch gesture for Basic view zoom
-  // Use shared value to track initial zoom scale when gesture starts
+  // Use shared value for real-time updates without JS thread delay
+  const zoomScaleShared = useSharedValue(zoomScale);
   const initialZoomScale = useSharedValue(zoomScale);
-  const currentZoomScale = useSharedValue(zoomScale);
   
-  // Keep shared values in sync with zoomScale state
+  // Keep shared value in sync with zoomScale state (for button updates)
   useEffect(() => {
-    currentZoomScale.value = zoomScale;
+    zoomScaleShared.value = zoomScale;
     initialZoomScale.value = zoomScale;
-  }, [zoomScale, currentZoomScale, initialZoomScale]);
+  }, [zoomScale, zoomScaleShared, initialZoomScale]);
 
-  // Wrapper function to update zoom scale from JS thread
-  const updateZoomScale = useCallback((newScale) => {
-    setZoomScale(newScale);
-    currentZoomScale.value = newScale;
-  }, [currentZoomScale]);
+  // Sync shared value back to state (for button controls and persistence)
+  // Use useAnimatedReaction for immediate updates
+  useAnimatedReaction(
+    () => zoomScaleShared.value,
+    (value) => {
+      runOnJS(setZoomScale)(value);
+    },
+    [zoomScaleShared]
+  );
 
   const clampZoomScale = useCallback(() => {
-    setZoomScale(prev => {
-      const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev));
-      currentZoomScale.value = clamped;
-      return clamped;
-    });
-  }, [currentZoomScale]);
+    const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomScaleShared.value));
+    zoomScaleShared.value = clamped;
+    setZoomScale(clamped);
+  }, [zoomScaleShared]);
 
   const pinchGesture = useMemo(() => {
     if (viewMode !== 'basic') return undefined;
@@ -127,23 +131,24 @@ const TimelineVisualization = forwardRef(({
     return Gesture.Pinch()
       .onStart(() => {
         // Capture the current zoom scale when gesture starts
-        // This will be our base for calculating the new scale
-        initialZoomScale.value = currentZoomScale.value;
+        initialZoomScale.value = zoomScaleShared.value;
       })
       .onUpdate((event) => {
         // event.scale is cumulative from gesture start (starts at 1.0)
-        // Multiply the initial scale (captured in onStart) by event.scale
+        // Update shared value directly for real-time response
         const newScale = Math.max(
           MIN_ZOOM, 
           Math.min(MAX_ZOOM, initialZoomScale.value * event.scale)
         );
-        runOnJS(updateZoomScale)(newScale);
+        zoomScaleShared.value = newScale;
       })
       .onEnd(() => {
         // Clamp to bounds on end
-        runOnJS(clampZoomScale)();
+        const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomScaleShared.value));
+        zoomScaleShared.value = clamped;
+        runOnJS(setZoomScale)(clamped);
       });
-  }, [viewMode, updateZoomScale, clampZoomScale, initialZoomScale, currentZoomScale]);
+  }, [viewMode, initialZoomScale, zoomScaleShared]);
 
   // Animated transition overlay for zoom level changes
   const transitionProgress = useSharedValue(0);
@@ -736,6 +741,19 @@ const TimelineVisualization = forwardRef(({
               </TouchableOpacity>
             </>
           )}
+          {/* Theme Toggle */}
+          <View style={styles.themeToggleContainer}>
+            <Text style={styles.themeToggleLabel}>Classic</Text>
+            <Switch
+              value={themeType === 'custom'}
+              onValueChange={(value) => {
+                switchThemeType(value ? 'custom' : 'classic');
+              }}
+              trackColor={{ false: '#8B7355', true: '#8B5CF6' }}
+              thumbColor={themeType === 'custom' ? '#FFFFFF' : '#F5F5DC'}
+            />
+            <Text style={styles.themeToggleLabel}>Custom</Text>
+          </View>
           <TouchableOpacity
             style={styles.viewToggle}
             onPress={() => {
@@ -777,7 +795,7 @@ const TimelineVisualization = forwardRef(({
                     events={events}
                     scenes={scenes}
                     isFictional={isFictional}
-                    zoomScale={zoomScale}
+                    zoomScale={zoomScaleShared}
                   />
                 </GestureDetector>
               ) : viewMode === 'advanced' ? (
@@ -892,6 +910,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.1,
+  },
+  themeToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  themeToggleLabel: {
+    color: '#E0E0E0',
+    fontSize: 11,
+    fontWeight: '500',
+    marginHorizontal: 6,
   },
   viewToggle: {
     paddingHorizontal: 12,

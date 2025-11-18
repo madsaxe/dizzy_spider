@@ -60,16 +60,34 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start', // Prevent stretching
     minHeight: HEXAGON_SIZE, // Fixed minimum height to prevent position changes
     height: HEXAGON_SIZE, // Fixed height so Eras don't move when Events expand
+    // Always reserve space for shadows to prevent position shifts
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0, // Transparent but reserves space
+    shadowRadius: 4,
+    elevation: 0, // Android shadow (transparent but reserves space)
   },
   horizontalItem: {
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0, // Prevent items from shrinking in horizontal layout
     position: 'absolute', // Events positioned absolutely to the right of Era
+    // Always reserve space for shadows to prevent position shifts
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0, // Transparent but reserves space
+    shadowRadius: 4,
+    elevation: 0, // Android shadow (transparent but reserves space)
   },
   sceneItem: {
     position: 'absolute', // Scenes positioned absolutely below Event
     alignItems: 'center',
+    // Always reserve space for shadows to prevent position shifts
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0, // Transparent but reserves space
+    shadowRadius: 4,
+    elevation: 0, // Android shadow (transparent but reserves space)
   },
   stackedNodesWrapper: {
     position: 'absolute',
@@ -451,17 +469,17 @@ const AnimatedHexagonItem = ({
     // Only update shared values if they've actually changed to avoid unnecessary updates
     // This prevents the 'onAnimatedValueUpdate' warning when values aren't being consumed
     if (translateX.value !== finalTranslateX) {
-      translateX.value = finalTranslateX;
+    translateX.value = finalTranslateX;
     }
     if (translateY.value !== finalTranslateY) {
-      translateY.value = finalTranslateY;
+    translateY.value = finalTranslateY;
     }
     // Only update if values have actually changed to avoid unnecessary updates
     if (opacity.value !== 1) {
-      opacity.value = 1;
+    opacity.value = 1;
     }
     if (scale.value !== 1) {
-      scale.value = 1;
+    scale.value = 1;
     }
   }, [finalTranslateX, finalTranslateY, translateX, translateY, opacity, scale]);
 

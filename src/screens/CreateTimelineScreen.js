@@ -121,15 +121,15 @@ const CreateTimelineScreen = () => {
           >
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.createButton, loading && styles.createButtonDisabled]}
-            onPress={handleCreate}
-            disabled={loading}
-          >
-            <Text style={styles.createButtonText}>
-              {loading ? 'Creating...' : 'Create Timeline'}
-            </Text>
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.createButton, loading && styles.createButtonDisabled]}
+          onPress={handleCreate}
+          disabled={loading}
+        >
+          <Text style={styles.createButtonText}>
+            {loading ? 'Creating...' : 'Create Timeline'}
+          </Text>
+        </TouchableOpacity>
         </View>
       </View>
     </ScrollView>

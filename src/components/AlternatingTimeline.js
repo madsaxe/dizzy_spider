@@ -324,6 +324,36 @@ const AlternatingTimeline = forwardRef(({
 
   const timeBasedData = calculateTimeBasedPositions();
   
+  // Calculate fictional timeline positions with minimum spacing
+  const calculateFictionalPositions = () => {
+    if (!isFictional || !data.length) return null;
+    
+    const tickSpacing = 100 * zoomScale; // One "tic" spacing
+    const minItemSpacing = tickSpacing; // Minimum spacing between nodes (one tic)
+    const itemHeight = 100 * zoomScale; // Estimated item height
+    
+    // Calculate Y positions ensuring minimum spacing
+    const itemPositions = data.map((item, index) => {
+      // First item starts at 16 (padding)
+      // Each subsequent item is spaced by at least one tic
+      const yPosition = 16 + (index * minItemSpacing);
+      return { item, yPosition };
+    });
+    
+    return {
+      itemPositions,
+      tickSpacing,
+      contentHeight: Math.max(
+        itemPositions.length > 0 
+          ? itemPositions[itemPositions.length - 1].yPosition + itemHeight + 16 
+          : 1000,
+        1000
+      ),
+    };
+  };
+  
+  const fictionalData = calculateFictionalPositions();
+  
   // Get screen width for SVG positioning
   const screenWidth = Dimensions.get('window').width;
   const centerX = screenWidth / 2;
@@ -355,9 +385,19 @@ const AlternatingTimeline = forwardRef(({
       tickMarks.length > 0 ? tickMarks[tickMarks.length - 1].y + 16 : 0
     );
     contentHeight = Math.max(maxYPosition + 200 * zoomScale, 1000); // Add scaled padding at bottom
+  } else if (fictionalData) {
+    // Evenly spaced ticks for fictional timelines - one tic per node
+    const tickMarkSpacing = fictionalData.tickSpacing;
+    const tickMarkCount = fictionalData.itemPositions.length;
+    tickMarks = fictionalData.itemPositions.map((pos, i) => ({
+      y: pos.yPosition,
+      date: null,
+      hasNode: true, // Each tick has a node in fictional timelines
+    }));
+    contentHeight = fictionalData.contentHeight;
   } else {
-    // Evenly spaced ticks for fictional timelines
-    const tickMarkSpacing = 100 * zoomScale; // Scale tick spacing based on zoom
+    // Fallback: evenly spaced ticks
+    const tickMarkSpacing = 100 * zoomScale;
     const estimatedHeight = Math.max(data.length * (100 + spacing.item) * zoomScale, 1000);
     const tickMarkCount = Math.floor(estimatedHeight / tickMarkSpacing);
     tickMarks = Array.from({ length: tickMarkCount }).map((_, i) => ({
@@ -453,13 +493,20 @@ const AlternatingTimeline = forwardRef(({
             const itemType = item._originalData?.type || item.type || 'default';
             const itemColor = colors[itemType] || colors.default || lineColor;
             
-            // Get time-based position if available
+            // Get time-based position if available, or fictional position
             const timePosition = timeBasedData?.itemPositions.find(p => p.item.id === item.id);
+            const fictionalPosition = fictionalData?.itemPositions.find(p => p.item.id === item.id);
+            
             // TimelineItem uses absolute positioning relative to viewport
             // Scale the Y position based on zoom scale
-            const itemStyle = timePosition && timePosition.yPosition !== null
-              ? { top: timePosition.yPosition * zoomScale, height: 0 } // Scale Y position and height: 0 to collapse container
-              : { marginBottom: spacing.item * zoomScale };
+            let itemStyle;
+            if (timePosition && timePosition.yPosition !== null) {
+              itemStyle = { top: timePosition.yPosition * zoomScale, height: 0 }; // Scale Y position and height: 0 to collapse container
+            } else if (fictionalPosition && fictionalPosition.yPosition !== null) {
+              itemStyle = { top: fictionalPosition.yPosition, height: 0 }; // Use calculated fictional position
+            } else {
+              itemStyle = { marginBottom: spacing.item * zoomScale };
+            }
             
             return (
               <View 

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,8 @@ import Animated, {
   FadeOutUp,
   useSharedValue,
   useAnimatedStyle,
+  useDerivedValue,
+  useAnimatedReaction,
   withSpring,
   runOnJS,
 } from 'react-native-reanimated';
@@ -44,12 +46,55 @@ const BasicView = ({
   events = {},
   scenes = {},
   isFictional = false,
-  zoomScale = 1.0, // Zoom scale (0.08 to 1.0, where 0.08 = 8% of screen)
+  zoomScale = 1.0, // Zoom scale (0.08 to 1.0, where 0.08 = 8% of screen) - can be shared value or number
 }) => {
+  // Track zoom scale state for reactive updates
+  const isSharedValue = typeof zoomScale === 'object' && zoomScale?.value !== undefined;
+  const [currentZoomScale, setCurrentZoomScale] = useState(
+    isSharedValue ? zoomScale.value : zoomScale
+  );
+  
+  // Use useAnimatedReaction to watch shared value changes (runs on UI thread)
+  // Only set up reaction if zoomScale is a shared value
+  // We need to handle this carefully since worklets can't access JS variables
+  useAnimatedReaction(
+    () => {
+      'worklet';
+      // Try to read as shared value - if it fails or is not a shared value, return sentinel
+      // We can't check isSharedValue here, so we try-catch
+      try {
+        if (zoomScale && typeof zoomScale === 'object' && 'value' in zoomScale) {
+          return zoomScale.value;
+        }
+      } catch (e) {
+        // Not a shared value or error accessing
+      }
+      return -1; // Sentinel value indicating not a shared value
+    },
+    (value) => {
+      'worklet';
+      // Only update if we got a valid value (not sentinel -1)
+      if (value >= 0) {
+        runOnJS(setCurrentZoomScale)(value);
+      }
+    },
+    [zoomScale]
+  );
+  
+  // Also update when zoomScale prop changes (for initial value and button updates)
+  useEffect(() => {
+    if (!isSharedValue) {
+      setCurrentZoomScale(zoomScale);
+    } else if (zoomScale) {
+      // Update initial value if shared value changed externally
+      setCurrentZoomScale(zoomScale.value);
+    }
+  }, [zoomScale, isSharedValue]);
+  
   // Calculate dynamic heights based on zoom scale
-  const ERA_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_ERA_HEIGHT * zoomScale);
-  const EVENT_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_EVENT_HEIGHT * zoomScale);
-  const SCENE_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_SCENE_HEIGHT * zoomScale);
+  const ERA_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_ERA_HEIGHT * currentZoomScale);
+  const EVENT_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_EVENT_HEIGHT * currentZoomScale);
+  const SCENE_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_SCENE_HEIGHT * currentZoomScale);
   const [expandedEras, setExpandedEras] = useState(new Set());
   const [expandedEvents, setExpandedEvents] = useState(new Set());
   
@@ -146,8 +191,8 @@ const BasicView = ({
   const handleStartDrag = (item, type, parentId = null) => {
     isDraggingRef.current = true;
     setDraggedItem({ type, id: item.id, data: item, parentId });
-    dragScale.value = withSpring(1.1);
-    dragOpacity.value = withSpring(0.7);
+    dragScale.value = withSpring(1.15, { damping: 15, stiffness: 300 }); // Increased scale and faster spring
+    dragOpacity.value = withSpring(0.8, { damping: 15, stiffness: 300 }); // Less opacity change for better visibility
     dragStartPosition.value = { x: 0, y: 0 };
   };
 
@@ -326,7 +371,7 @@ const BasicView = ({
   // Create gesture handler for drag
   const createDragGesture = (item, type, parentId = null) => {
     const longPress = Gesture.LongPress()
-      .minDuration(300)
+      .minDuration(150)
       .onStart(() => {
         runOnJS(handleStartDrag)(item, type, parentId);
       });
@@ -360,6 +405,15 @@ const BasicView = ({
         { scale: dragScale.value },
       ],
       opacity: dragOpacity.value,
+      // Enhanced visual feedback
+      borderWidth: 3,
+      borderColor: '#8B5CF6', // Purple border
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.5,
+      shadowRadius: 8,
+      elevation: 10, // Android shadow
+      zIndex: 1000, // Ensure dragged item is on top
     };
   });
 
@@ -373,7 +427,7 @@ const BasicView = ({
     const isDropTarget = dropTarget?.id === era.id && dropTarget?.type === 'era';
 
     const longPress = Gesture.LongPress()
-      .minDuration(300)
+      .minDuration(150)
       .onStart(() => {
         runOnJS(handleStartDrag)(era, 'era', null);
       });
@@ -479,7 +533,7 @@ const BasicView = ({
     const isDropTarget = dropTarget?.id === event.id && dropTarget?.type === 'event';
 
     const longPress = Gesture.LongPress()
-      .minDuration(300)
+      .minDuration(150)
       .onStart(() => {
         runOnJS(handleStartDrag)(event, 'event', eraId);
       });
@@ -582,7 +636,7 @@ const BasicView = ({
     const isDropTarget = dropTarget?.id === scene.id && dropTarget?.type === 'scene';
 
     const longPress = Gesture.LongPress()
-      .minDuration(300)
+      .minDuration(150)
       .onStart(() => {
         runOnJS(handleStartDrag)(scene, 'scene', eventId);
       });
@@ -893,9 +947,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   dropTarget: {
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: '#8B5CF6',
     borderStyle: 'dashed',
+    backgroundColor: 'rgba(139, 92, 246, 0.1)', // Light purple background
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 5,
   },
   modalOverlay: {
     flex: 1,

@@ -61,7 +61,7 @@ export const AppProvider = ({ children }) => {
     try {
       setLoading(true);
       const [timelinesData, progress] = await Promise.all([
-        timelineService.getAllTimelines(user?.uid),
+        timelineService.getAllTimelines(user?.uid, true), // Enable cloud sync when user is logged in
         gamificationService.getUserProgress(),
       ]);
       setTimelines(timelinesData);
@@ -74,7 +74,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const refreshTimelines = async () => {
-    const timelinesData = await timelineService.getAllTimelines(user?.uid);
+    const timelinesData = await timelineService.getAllTimelines(user?.uid, true); // Enable cloud sync
     setTimelines(timelinesData);
   };
 
@@ -89,7 +89,7 @@ export const AppProvider = ({ children }) => {
       ...timelineData,
       userId: user?.uid || null,
     };
-    const timeline = await timelineService.createTimeline(timelineWithUser);
+    const timeline = await timelineService.createTimeline(timelineWithUser, user?.uid || null);
     await refreshTimelines();
     
     // Check achievements
@@ -102,7 +102,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const updateTimeline = async (timelineId, updates) => {
-    const timeline = await timelineService.updateTimeline(timelineId, updates);
+    const timeline = await timelineService.updateTimeline(timelineId, updates, user?.uid || null);
     await refreshTimelines();
     return timeline;
   };

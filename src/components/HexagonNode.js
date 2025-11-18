@@ -349,6 +349,12 @@ const styles = StyleSheet.create({
     width: HEXAGON_SIZE + BORDER_WIDTH,
     height: HEXAGON_SIZE + BORDER_WIDTH,
     position: 'relative',
+    // Always apply shadows to prevent position shifts when shadows appear/disappear
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3, // Always visible to prevent layout shifts
+    shadowRadius: 4,
+    elevation: 4, // Android shadow (always applied)
   },
   hexagonSvg: {
     position: 'absolute',

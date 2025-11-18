@@ -4,6 +4,7 @@ import Event from '../models/Event';
 import Scene from '../models/Scene';
 import storageService from './storageService';
 import { compareTimes } from '../utils/timeUtils';
+import firestore from '@react-native-firebase/firestore';
 
 class TimelineService {
   // ============ Timeline CRUD ============
@@ -11,9 +12,20 @@ class TimelineService {
   /**
    * Get all timelines for the current user
    * @param {string} userId - User ID to filter timelines
+   * @param {boolean} syncFromCloud - Whether to sync from Firestore if user is logged in
    * @returns {Promise<Array<Timeline>>}
    */
-  async getAllTimelines(userId = null) {
+  async getAllTimelines(userId = null, syncFromCloud = false) {
+    // If user is logged in and sync is requested, try to sync from Firestore first
+    if (userId && syncFromCloud) {
+      try {
+        await this.syncTimelinesFromCloud(userId);
+      } catch (error) {
+        console.error('Error syncing timelines from cloud:', error);
+        // Continue with local data if sync fails
+      }
+    }
+    
     const timelines = await storageService.getTimelines();
     const allTimelines = timelines.map(t => Timeline.fromJSON(t));
     
@@ -38,13 +50,28 @@ class TimelineService {
   /**
    * Create a new timeline
    * @param {object} timelineData - Timeline data
+   * @param {string} userId - User ID for cloud sync
    * @returns {Promise<Timeline>}
    */
-  async createTimeline(timelineData) {
+  async createTimeline(timelineData, userId = null) {
     const timeline = new Timeline(timelineData);
+    if (userId) {
+      timeline.userId = userId;
+    }
     const timelines = await this.getAllTimelines();
     timelines.push(timeline);
     await storageService.saveTimelines(timelines.map(t => t.toJSON()));
+    
+    // Sync to Firestore if user is logged in
+    if (userId) {
+      try {
+        await this.syncTimelineToCloud(timeline, userId);
+      } catch (error) {
+        console.error('Error syncing timeline to cloud:', error);
+        // Continue even if sync fails
+      }
+    }
+    
     return timeline;
   }
 
@@ -52,9 +79,10 @@ class TimelineService {
    * Update a timeline
    * @param {string} timelineId - Timeline ID
    * @param {object} updates - Updates to apply
+   * @param {string} userId - User ID for cloud sync
    * @returns {Promise<Timeline|null>}
    */
-  async updateTimeline(timelineId, updates) {
+  async updateTimeline(timelineId, updates, userId = null) {
     const timelines = await this.getAllTimelines();
     const index = timelines.findIndex(t => t.id === timelineId);
     
@@ -64,6 +92,17 @@ class TimelineService {
     const timeline = timelines[index];
     Object.assign(timeline, updates);
     await storageService.saveTimelines(timelines.map(t => t.toJSON()));
+    
+    // Sync to Firestore if user is logged in
+    if (userId || timeline.userId) {
+      try {
+        await this.syncTimelineToCloud(timeline, userId || timeline.userId);
+      } catch (error) {
+        console.error('Error syncing timeline to cloud:', error);
+        // Continue even if sync fails
+      }
+    }
+    
     return timeline;
   }
 
@@ -456,6 +495,166 @@ class TimelineService {
     itemsWithoutPositioning.sort((a, b) => a.order - b.order);
     
     return [...itemsWithTime, ...itemsWithoutPositioning];
+  }
+
+  // ============ Cloud Sync Methods ============
+
+  /**
+   * Sync a single timeline to Firestore
+   * @param {Timeline} timeline - Timeline to sync
+   * @param {string} userId - User ID
+   * @returns {Promise<void>}
+   */
+  async syncTimelineToCloud(timeline, userId) {
+    if (!userId || !timeline) return;
+    
+    try {
+      const timelineData = timeline.toJSON();
+      timelineData.userId = userId;
+      timelineData.updatedAt = firestore.FieldValue.serverTimestamp();
+      
+      // Get all related data
+      const eras = await this.getErasByTimelineId(timeline.id);
+      const allEvents = [];
+      const allScenes = [];
+      
+      for (const era of eras) {
+        const eraEvents = await this.getEventsByEraId(era.id);
+        allEvents.push(...eraEvents);
+        
+        for (const event of eraEvents) {
+          const eventScenes = await this.getScenesByEventId(event.id);
+          allScenes.push(...eventScenes);
+        }
+      }
+      
+      // Store complete timeline data in Firestore
+      await firestore()
+        .collection('userTimelines')
+        .doc(userId)
+        .collection('timelines')
+        .doc(timeline.id)
+        .set({
+          ...timelineData,
+          eras: eras.map(e => e.toJSON()),
+          events: allEvents.map(e => e.toJSON()),
+          scenes: allScenes.map(s => s.toJSON()),
+          syncedAt: firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    } catch (error) {
+      console.error('Error syncing timeline to cloud:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync all timelines to Firestore for a user
+   * @param {string} userId - User ID
+   * @returns {Promise<void>}
+   */
+  async syncTimelinesToCloud(userId) {
+    if (!userId) return;
+    
+    try {
+      const timelines = await this.getAllTimelines(userId, false);
+      
+      for (const timeline of timelines) {
+        await this.syncTimelineToCloud(timeline, userId);
+      }
+    } catch (error) {
+      console.error('Error syncing timelines to cloud:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync timelines from Firestore to local storage
+   * @param {string} userId - User ID
+   * @returns {Promise<void>}
+   */
+  async syncTimelinesFromCloud(userId) {
+    if (!userId) return;
+    
+    try {
+      const snapshot = await firestore()
+        .collection('userTimelines')
+        .doc(userId)
+        .collection('timelines')
+        .get();
+      
+      if (snapshot.empty) {
+        // No cloud data, sync local to cloud instead
+        await this.syncTimelinesToCloud(userId);
+        return;
+      }
+      
+      // Get local timelines
+      const localTimelines = await storageService.getTimelines();
+      const localTimelineMap = new Map(localTimelines.map(t => [t.id, t]));
+      
+      // Process cloud timelines
+      const cloudTimelines = [];
+      for (const doc of snapshot.docs) {
+        const cloudData = doc.data();
+        const timelineId = doc.id;
+        
+        // Check if local version exists and compare timestamps
+        const localTimeline = localTimelineMap.get(timelineId);
+        const cloudSyncedAt = cloudData.syncedAt?.toDate?.() || new Date(0);
+        const localUpdatedAt = localTimeline?.updatedAt 
+          ? new Date(localTimeline.updatedAt) 
+          : new Date(0);
+        
+        // Use cloud version if it's newer, otherwise keep local
+        if (!localTimeline || cloudSyncedAt >= localUpdatedAt) {
+          // Use cloud data
+          const { eras = [], events = [], scenes = [], ...timelineData } = cloudData;
+          cloudTimelines.push(timelineData);
+          
+          // Save related data
+          if (eras.length > 0) {
+            const existingEras = await storageService.getEras();
+            const filteredEras = existingEras.filter(e => e.timelineId !== timelineId);
+            await storageService.saveEras([...filteredEras, ...eras]);
+          }
+          
+          if (events.length > 0) {
+            const existingEvents = await storageService.getEvents();
+            const filteredEvents = existingEvents.filter(e => {
+              const eraIds = eras.map(era => era.id);
+              return !eraIds.includes(e.eraId);
+            });
+            await storageService.saveEvents([...filteredEvents, ...events]);
+          }
+          
+          if (scenes.length > 0) {
+            const existingScenes = await storageService.getScenes();
+            const filteredScenes = existingScenes.filter(s => {
+              const eventIds = events.map(event => event.id);
+              return !eventIds.includes(s.eventId);
+            });
+            await storageService.saveScenes([...filteredScenes, ...scenes]);
+          }
+        } else {
+          // Local is newer, sync to cloud
+          cloudTimelines.push(localTimeline);
+          if (localTimeline.userId === userId) {
+            const timeline = Timeline.fromJSON(localTimeline);
+            await this.syncTimelineToCloud(timeline, userId);
+          }
+        }
+      }
+      
+      // Save merged timelines
+      const mergedTimelines = [
+        ...cloudTimelines,
+        ...localTimelines.filter(t => t.userId === userId && !cloudTimelines.find(ct => ct.id === t.id))
+      ];
+      await storageService.saveTimelines(mergedTimelines);
+    } catch (error) {
+      console.error('Error syncing timelines from cloud:', error);
+      throw error;
+    }
   }
 }
 
