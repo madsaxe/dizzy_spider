@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,23 +8,12 @@ import {
   RefreshControl,
   Dimensions,
   Image,
-  Modal,
-  TextInput,
-  Alert,
 } from 'react-native';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
   FadeInDown,
   FadeOutUp,
-  useSharedValue,
-  useAnimatedStyle,
-  useDerivedValue,
-  useAnimatedReaction,
-  withSpring,
-  runOnJS,
 } from 'react-native-reanimated';
 import { getLocalImage, hasLocalImage } from '../assets/images';
-import timelineService from '../services/timelineService';
 
 const screenWidth = Dimensions.get('window').width;
 const screenHeight = Dimensions.get('window').height;
@@ -48,48 +37,47 @@ const BasicView = ({
   isFictional = false,
   zoomScale = 1.0, // Zoom scale (0.08 to 1.0, where 0.08 = 8% of screen) - can be shared value or number
 }) => {
-  // Track zoom scale state for reactive updates
+  // Track zoom scale - for shared values, use requestAnimationFrame to poll for updates
+  // This avoids feedback loops from useAnimatedReaction
   const isSharedValue = typeof zoomScale === 'object' && zoomScale?.value !== undefined;
   const [currentZoomScale, setCurrentZoomScale] = useState(
     isSharedValue ? zoomScale.value : zoomScale
   );
   
-  // Use useAnimatedReaction to watch shared value changes (runs on UI thread)
-  // Only set up reaction if zoomScale is a shared value
-  // We need to handle this carefully since worklets can't access JS variables
-  useAnimatedReaction(
-    () => {
-      'worklet';
-      // Try to read as shared value - if it fails or is not a shared value, return sentinel
-      // We can't check isSharedValue here, so we try-catch
-      try {
-        if (zoomScale && typeof zoomScale === 'object' && 'value' in zoomScale) {
-          return zoomScale.value;
-        }
-      } catch (e) {
-        // Not a shared value or error accessing
-      }
-      return -1; // Sentinel value indicating not a shared value
-    },
-    (value) => {
-      'worklet';
-      // Only update if we got a valid value (not sentinel -1)
-      if (value >= 0) {
-        runOnJS(setCurrentZoomScale)(value);
-      }
-    },
-    [zoomScale]
-  );
+  // For shared values, poll using requestAnimationFrame for smooth updates
+  // Store zoomScale in a ref so we can access it in the polling function
+  const zoomScaleRef = useRef(zoomScale);
+  useEffect(() => {
+    zoomScaleRef.current = zoomScale;
+  }, [zoomScale]);
   
-  // Also update when zoomScale prop changes (for initial value and button updates)
   useEffect(() => {
     if (!isSharedValue) {
       setCurrentZoomScale(zoomScale);
-    } else if (zoomScale) {
-      // Update initial value if shared value changed externally
-      setCurrentZoomScale(zoomScale.value);
+      return;
     }
-  }, [zoomScale, isSharedValue]);
+    
+    let rafId;
+    let lastValue = isSharedValue ? zoomScale.value : zoomScale;
+    
+    const pollZoom = () => {
+      const currentZoom = zoomScaleRef.current;
+      if (currentZoom && typeof currentZoom === 'object' && typeof currentZoom.value === 'number') {
+        const newValue = currentZoom.value;
+        // Only update if value changed significantly
+        if (Math.abs(newValue - lastValue) > 0.0001) {
+          setCurrentZoomScale(newValue);
+          lastValue = newValue;
+        }
+      }
+      rafId = requestAnimationFrame(pollZoom);
+    };
+    
+    rafId = requestAnimationFrame(pollZoom);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [isSharedValue]); // Only depend on isSharedValue to avoid loops
   
   // Calculate dynamic heights based on zoom scale
   const ERA_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_ERA_HEIGHT * currentZoomScale);
@@ -97,16 +85,6 @@ const BasicView = ({
   const SCENE_HEIGHT = Math.max(screenHeight * MIN_ZOOM, BASE_SCENE_HEIGHT * currentZoomScale);
   const [expandedEras, setExpandedEras] = useState(new Set());
   const [expandedEvents, setExpandedEvents] = useState(new Set());
-  
-  // Drag and drop state
-  const [draggedItem, setDraggedItem] = useState(null); // { type: 'era'|'event'|'scene', id, data, parentId }
-  const [dropTarget, setDropTarget] = useState(null); // { type, id, position: 'above'|'below' }
-  const [showDateModal, setShowDateModal] = useState(false);
-  const [dateModalData, setDateModalData] = useState(null); // { item, newPosition, requiresDate }
-  const dragPosition = useSharedValue({ x: 0, y: 0 });
-  const dragScale = useSharedValue(1);
-  const dragOpacity = useSharedValue(1);
-  const itemLayouts = useRef(new Map()); // Store layout positions for drop target detection
 
   const toggleEra = (eraId) => {
     setExpandedEras((prev) => {
@@ -184,238 +162,6 @@ const BasicView = ({
     return null;
   };
 
-  // Drag and drop helper functions
-  const isDraggingRef = useRef(false);
-  const dragStartPosition = useSharedValue({ x: 0, y: 0 });
-
-  const handleStartDrag = (item, type, parentId = null) => {
-    isDraggingRef.current = true;
-    setDraggedItem({ type, id: item.id, data: item, parentId });
-    dragScale.value = withSpring(1.15, { damping: 15, stiffness: 300 }); // Increased scale and faster spring
-    dragOpacity.value = withSpring(0.8, { damping: 15, stiffness: 300 }); // Less opacity change for better visibility
-    dragStartPosition.value = { x: 0, y: 0 };
-  };
-
-  const handleEndDrag = () => {
-    if (!isDraggingRef.current) return;
-    
-    isDraggingRef.current = false;
-    dragScale.value = withSpring(1);
-    dragOpacity.value = withSpring(1);
-    dragPosition.value = { x: 0, y: 0 };
-    
-    if (dropTarget && draggedItem) {
-      handleDrop(draggedItem, dropTarget);
-    } else {
-      // No drop target, cancel drag
-      setDraggedItem(null);
-      setDropTarget(null);
-    }
-  };
-
-  const handleDragUpdate = (event) => {
-    if (!isDraggingRef.current) return;
-    
-    dragPosition.value = {
-      x: event.translationX,
-      y: event.translationY,
-    };
-    
-    // Detect drop target based on position
-    detectDropTarget(event.absoluteX, event.absoluteY);
-  };
-
-  const detectDropTarget = (x, y) => {
-    // Check all item layouts to find which one we're over
-    let foundTarget = null;
-    
-    itemLayouts.current.forEach((layout, key) => {
-      const { type, id, y: layoutY, height } = layout;
-      const midY = layoutY + height / 2;
-      
-      if (y >= layoutY && y <= layoutY + height) {
-        const position = y < midY ? 'above' : 'below';
-        foundTarget = { type, id, position };
-      }
-    });
-    
-    if (foundTarget) {
-      setDropTarget(foundTarget);
-    } else {
-      setDropTarget(null);
-    }
-  };
-
-  const handleDrop = async (item, target) => {
-    // Check if date update is needed
-    const requiresDate = !isFictional && (item.data.time || item.data.startTime);
-    
-    if (requiresDate) {
-      // Show date modal
-      setDateModalData({ item, target, requiresDate });
-      setShowDateModal(true);
-      setDraggedItem(null);
-      setDropTarget(null);
-    } else {
-      // Direct reorder without date update
-      await performReorder(item, target, null);
-    }
-  };
-
-  const performReorder = async (item, target, newDate) => {
-    try {
-      // Determine new order and parent
-      const newOrder = calculateNewOrder(item, target);
-      const newParentId = calculateNewParent(item, target);
-      
-      // Update order
-      if (item.type === 'era') {
-        await timelineService.updateEraOrder(item.id, newOrder);
-        if (newDate) {
-          await timelineService.updateEraDate(item.id, newDate);
-        }
-      } else if (item.type === 'event') {
-        await timelineService.updateEventOrder(item.id, newOrder);
-        if (newParentId && newParentId !== item.parentId) {
-          await timelineService.updateEvent(item.id, { eraId: newParentId });
-        }
-        if (newDate) {
-          await timelineService.updateEventDate(item.id, newDate);
-        }
-      } else if (item.type === 'scene') {
-        await timelineService.updateSceneOrder(item.id, newOrder);
-        if (newParentId && newParentId !== item.parentId) {
-          await timelineService.updateScene(item.id, { eventId: newParentId });
-        }
-        if (newDate) {
-          await timelineService.updateSceneDate(item.id, newDate);
-        }
-      }
-      
-      // Refresh data
-      if (onRefresh) {
-        onRefresh();
-      }
-      
-      setDraggedItem(null);
-      setDropTarget(null);
-    } catch (error) {
-      console.error('Error reordering item:', error);
-      Alert.alert('Error', 'Failed to reorder item. Please try again.');
-    }
-  };
-
-  const calculateNewOrder = (item, target) => {
-    // Get all items at the target level
-    let itemsAtLevel = [];
-    
-    if (target.type === 'era') {
-      itemsAtLevel = data
-        .filter(d => {
-          const itemType = d._originalData?.type || d.type;
-          return itemType === 'era';
-        })
-        .map(d => d._originalData?.data || d.data || d)
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
-    } else if (target.type === 'event') {
-      itemsAtLevel = (events[target.id] || [])
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
-    } else if (target.type === 'scene') {
-      itemsAtLevel = (scenes[target.id] || [])
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
-    }
-    
-    // Find target item index
-    const targetIndex = itemsAtLevel.findIndex(i => i.id === target.id);
-    if (targetIndex === -1) return item.data.order || 0;
-    
-    // Calculate new order based on position
-    if (target.position === 'above') {
-      // Insert before target
-      const targetOrder = itemsAtLevel[targetIndex].order || 0;
-      return Math.max(0, targetOrder - 1);
-    } else {
-      // Insert after target
-      const targetOrder = itemsAtLevel[targetIndex].order || 0;
-      return targetOrder + 1;
-    }
-  };
-
-  const calculateNewParent = (item, target) => {
-    // If moving to a different level, return the new parent ID
-    if (item.type === 'event' && target.type === 'era') {
-      return target.id; // Moving event to new era
-    }
-    if (item.type === 'scene' && target.type === 'event') {
-      return target.id; // Moving scene to new event
-    }
-    return item.parentId; // Same parent
-  };
-
-  const validateDate = (dateString, item, target) => {
-    if (isFictional) return true; // No validation for fictional timelines
-    
-    try {
-      const newDate = new Date(dateString);
-      if (isNaN(newDate.getTime())) return false;
-      
-      // Get surrounding items to validate date fits
-      // This is simplified - you'd need to get actual items from data
-      // For now, just validate it's a valid date
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  // Create gesture handler for drag
-  const createDragGesture = (item, type, parentId = null) => {
-    const longPress = Gesture.LongPress()
-      .minDuration(150)
-      .onStart(() => {
-        runOnJS(handleStartDrag)(item, type, parentId);
-      });
-
-    const pan = Gesture.Pan()
-      .enabled(draggedItem?.id === item.id)
-      .onUpdate((event) => {
-        dragPosition.value = {
-          x: event.translationX,
-          y: event.translationY,
-        };
-        // Detect drop target based on position
-        // This is simplified - you'd need to check itemLayouts
-      })
-      .onEnd(() => {
-        runOnJS(handleEndDrag)();
-      });
-
-    return Gesture.Simultaneous(longPress, pan);
-  };
-
-  // Animated style for dragged item
-  const draggedItemStyle = useAnimatedStyle(() => {
-    if (!draggedItem) {
-      return {};
-    }
-    return {
-      transform: [
-        { translateX: dragPosition.value.x },
-        { translateY: dragPosition.value.y },
-        { scale: dragScale.value },
-      ],
-      opacity: dragOpacity.value,
-      // Enhanced visual feedback
-      borderWidth: 3,
-      borderColor: '#8B5CF6', // Purple border
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.5,
-      shadowRadius: 8,
-      elevation: 10, // Android shadow
-      zIndex: 1000, // Ensure dragged item is on top
-    };
-  });
 
   const renderEra = (era, index) => {
     const isExpanded = expandedEras.has(era.id);
@@ -423,56 +169,28 @@ const BasicView = ({
     const hasEvents = eraEvents.length > 0;
     const imageSource = getImageSource(era.imageUrl);
     const backgroundColor = colors.era || '#8B5CF6';
-    const isDragging = draggedItem?.id === era.id;
-    const isDropTarget = dropTarget?.id === era.id && dropTarget?.type === 'era';
-
-    const longPress = Gesture.LongPress()
-      .minDuration(150)
-      .onStart(() => {
-        runOnJS(handleStartDrag)(era, 'era', null);
-      });
-
-    const pan = Gesture.Pan()
-      .enabled(isDraggingRef.current)
-      .onUpdate((event) => {
-        runOnJS(handleDragUpdate)(event);
-      })
-      .onEnd(() => {
-        runOnJS(handleEndDrag)();
-      });
-
-    const composedGesture = Gesture.Simultaneous(longPress, pan);
 
     return (
       <View 
         key={era.id} 
         style={styles.eraContainer}
-        onLayout={(event) => {
-          const { y, height } = event.nativeEvent.layout;
-          itemLayouts.current.set(`era-${era.id}`, { type: 'era', id: era.id, y, height });
-        }}
       >
-        <GestureDetector gesture={composedGesture}>
-          <Animated.View
-            style={[
-              styles.eraBar,
-              { height: ERA_HEIGHT },
-              isDragging && draggedItemStyle,
-              isDropTarget && styles.dropTarget,
-            ]}
+        <Animated.View
+          style={[
+            styles.eraBar,
+            { height: ERA_HEIGHT },
+          ]}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              toggleEra(era.id);
+              if (onItemPress) {
+                onItemPress({ _originalData: { type: 'era', data: era } }, index);
+              }
+            }}
+            activeOpacity={0.8}
           >
-            <TouchableOpacity
-              style={StyleSheet.absoluteFill}
-              onPress={() => {
-                if (!isDragging) {
-                  toggleEra(era.id);
-                  if (onItemPress) {
-                    onItemPress({ _originalData: { type: 'era', data: era } }, index);
-                  }
-                }
-              }}
-              activeOpacity={0.8}
-            >
               {imageSource && (
                 <Image
                   source={imageSource}
@@ -508,8 +226,6 @@ const BasicView = ({
               </View>
             </TouchableOpacity>
           </Animated.View>
-        </GestureDetector>
-
         {isExpanded && hasEvents && (
           <Animated.View 
             style={styles.eventsContainer}
@@ -529,56 +245,28 @@ const BasicView = ({
     const hasScenes = eventScenes.length > 0;
     const imageSource = getImageSource(event.imageUrl);
     const backgroundColor = colors.event || '#4CAF50';
-    const isDragging = draggedItem?.id === event.id;
-    const isDropTarget = dropTarget?.id === event.id && dropTarget?.type === 'event';
-
-    const longPress = Gesture.LongPress()
-      .minDuration(150)
-      .onStart(() => {
-        runOnJS(handleStartDrag)(event, 'event', eraId);
-      });
-
-    const pan = Gesture.Pan()
-      .enabled(isDraggingRef.current)
-      .onUpdate((event) => {
-        runOnJS(handleDragUpdate)(event);
-      })
-      .onEnd(() => {
-        runOnJS(handleEndDrag)();
-      });
-
-    const composedGesture = Gesture.Simultaneous(longPress, pan);
 
     return (
       <View 
         key={event.id} 
         style={styles.eventContainer}
-        onLayout={(event) => {
-          const { y, height } = event.nativeEvent.layout;
-          itemLayouts.current.set(`event-${event.id}`, { type: 'event', id: event.id, y, height });
-        }}
       >
-        <GestureDetector gesture={composedGesture}>
-          <Animated.View
-            style={[
-              styles.eventBar,
-              { height: EVENT_HEIGHT },
-              isDragging && draggedItemStyle,
-              isDropTarget && styles.dropTarget,
-            ]}
+        <Animated.View
+          style={[
+            styles.eventBar,
+            { height: EVENT_HEIGHT },
+          ]}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              toggleEvent(event.id);
+              if (onItemPress) {
+                onItemPress({ _originalData: { type: 'event', data: event } }, index);
+              }
+            }}
+            activeOpacity={0.8}
           >
-            <TouchableOpacity
-              style={StyleSheet.absoluteFill}
-              onPress={() => {
-                if (!isDragging) {
-                  toggleEvent(event.id);
-                  if (onItemPress) {
-                    onItemPress({ _originalData: { type: 'event', data: event } }, index);
-                  }
-                }
-              }}
-              activeOpacity={0.8}
-            >
               {imageSource && (
                 <Image
                   source={imageSource}
@@ -614,8 +302,6 @@ const BasicView = ({
               </View>
             </TouchableOpacity>
           </Animated.View>
-        </GestureDetector>
-
         {isExpanded && hasScenes && (
           <Animated.View 
             style={styles.scenesContainer}
@@ -632,54 +318,26 @@ const BasicView = ({
   const renderScene = (scene, index, eventId) => {
     const imageSource = getImageSource(scene.imageUrl);
     const backgroundColor = colors.scene || '#FF9800';
-    const isDragging = draggedItem?.id === scene.id;
-    const isDropTarget = dropTarget?.id === scene.id && dropTarget?.type === 'scene';
-
-    const longPress = Gesture.LongPress()
-      .minDuration(150)
-      .onStart(() => {
-        runOnJS(handleStartDrag)(scene, 'scene', eventId);
-      });
-
-    const pan = Gesture.Pan()
-      .enabled(isDraggingRef.current)
-      .onUpdate((event) => {
-        runOnJS(handleDragUpdate)(event);
-      })
-      .onEnd(() => {
-        runOnJS(handleEndDrag)();
-      });
-
-    const composedGesture = Gesture.Simultaneous(longPress, pan);
 
     return (
       <View
         key={scene.id}
-        onLayout={(event) => {
-          const { y, height } = event.nativeEvent.layout;
-          itemLayouts.current.set(`scene-${scene.id}`, { type: 'scene', id: scene.id, y, height });
-        }}
       >
-        <GestureDetector gesture={composedGesture}>
-          <Animated.View
-            style={[
-              styles.sceneBar,
-              { height: SCENE_HEIGHT },
-              isDragging && draggedItemStyle,
-              isDropTarget && styles.dropTarget,
-            ]}
+        <Animated.View
+          style={[
+            styles.sceneBar,
+            { height: SCENE_HEIGHT },
+          ]}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              if (onItemPress) {
+                onItemPress({ _originalData: { type: 'scene', data: scene } }, index);
+              }
+            }}
+            activeOpacity={0.8}
           >
-            <TouchableOpacity
-              style={StyleSheet.absoluteFill}
-              onPress={() => {
-                if (!isDragging) {
-                  if (onItemPress) {
-                    onItemPress({ _originalData: { type: 'scene', data: scene } }, index);
-                  }
-                }
-              }}
-              activeOpacity={0.8}
-            >
               {imageSource && (
                 <Image
                   source={imageSource}
@@ -707,7 +365,6 @@ const BasicView = ({
               </View>
             </TouchableOpacity>
           </Animated.View>
-        </GestureDetector>
       </View>
     );
   };
@@ -738,61 +395,6 @@ const BasicView = ({
           return renderEra(eraData, index);
         })
       )}
-      
-      {/* Date Update Modal */}
-      <Modal
-        visible={showDateModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => {
-          setShowDateModal(false);
-          setDateModalData(null);
-        }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Update Date</Text>
-            <Text style={styles.modalText}>
-              Please enter a new date for this item:
-            </Text>
-            <TextInput
-              style={styles.dateInput}
-              placeholder="YYYY-MM-DD"
-              value={dateModalData?.newDate || ''}
-              onChangeText={(text) => {
-                setDateModalData(prev => ({ ...prev, newDate: text }));
-              }}
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={() => {
-                  setShowDateModal(false);
-                  setDateModalData(null);
-                }}
-              >
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonConfirm]}
-                onPress={async () => {
-                  if (dateModalData?.newDate && dateModalData?.item && dateModalData?.target) {
-                    if (validateDate(dateModalData.newDate, dateModalData.item, dateModalData.target)) {
-                      await performReorder(dateModalData.item, dateModalData.target, dateModalData.newDate);
-                      setShowDateModal(false);
-                      setDateModalData(null);
-                    } else {
-                      Alert.alert('Invalid Date', 'Please enter a valid date.');
-                    }
-                  }
-                }}
-              >
-                <Text style={styles.modalButtonText}>Confirm</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 };
@@ -945,73 +547,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#E0E0E0',
     textAlign: 'center',
-  },
-  dropTarget: {
-    borderWidth: 3,
-    borderColor: '#8B5CF6',
-    borderStyle: 'dashed',
-    backgroundColor: 'rgba(139, 92, 246, 0.1)', // Light purple background
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#1A1A2E',
-    borderRadius: 12,
-    padding: 20,
-    width: '80%',
-    maxWidth: 400,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 12,
-  },
-  modalText: {
-    fontSize: 14,
-    color: '#E0E0E0',
-    marginBottom: 16,
-  },
-  dateInput: {
-    backgroundColor: '#16213E',
-    borderRadius: 8,
-    padding: 12,
-    color: '#FFFFFF',
-    fontSize: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#2A2A3E',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  modalButtonCancel: {
-    backgroundColor: '#2A2A3E',
-  },
-  modalButtonConfirm: {
-    backgroundColor: '#8B5CF6',
-  },
-  modalButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 

@@ -102,22 +102,20 @@ const TimelineVisualization = forwardRef(({
   // Use shared value for real-time updates without JS thread delay
   const zoomScaleShared = useSharedValue(zoomScale);
   const initialZoomScale = useSharedValue(zoomScale);
+  const isUpdatingFromGesture = useRef(false);
   
-  // Keep shared value in sync with zoomScale state (for button updates)
+  // Only sync state to shared value when changed by buttons (not gestures)
   useEffect(() => {
-    zoomScaleShared.value = zoomScale;
-    initialZoomScale.value = zoomScale;
+    // Don't sync if the update came from a gesture
+    if (!isUpdatingFromGesture.current) {
+      zoomScaleShared.value = zoomScale;
+      initialZoomScale.value = zoomScale;
+    }
+    isUpdatingFromGesture.current = false;
   }, [zoomScale, zoomScaleShared, initialZoomScale]);
 
-  // Sync shared value back to state (for button controls and persistence)
-  // Use useAnimatedReaction for immediate updates
-  useAnimatedReaction(
-    () => zoomScaleShared.value,
-    (value) => {
-      runOnJS(setZoomScale)(value);
-    },
-    [zoomScaleShared]
-  );
+  // Don't sync shared value back to state during gestures - only on gesture end
+  // This prevents feedback loops. BasicView will read the shared value directly.
 
   const clampZoomScale = useCallback(() => {
     const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomScaleShared.value));
@@ -143,9 +141,11 @@ const TimelineVisualization = forwardRef(({
         zoomScaleShared.value = newScale;
       })
       .onEnd(() => {
-        // Clamp to bounds on end
+        'worklet';
+        // Clamp to bounds on end and sync to state
         const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomScaleShared.value));
         zoomScaleShared.value = clamped;
+        isUpdatingFromGesture.current = true;
         runOnJS(setZoomScale)(clamped);
       });
   }, [viewMode, initialZoomScale, zoomScaleShared]);
