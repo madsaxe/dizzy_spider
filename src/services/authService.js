@@ -9,7 +9,7 @@ class AuthService {
     // Note: webClientId is the Web Client ID from Firebase Console
     // The reversed client ID (com.googleusercontent.apps.xxx) should be in Info.plist
     GoogleSignin.configure({
-      webClientId: '1045184350964-rqcqtnfp4642lok73l8c9kasifuqs807.apps.googleusercontent.com',
+      webClientId: '1045184350964-5r6btsp69lcv85g6b84iqok88r6js6pd.apps.googleusercontent.com',
       // If you have a separate iOS Client ID, add it here:
       // iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
     });

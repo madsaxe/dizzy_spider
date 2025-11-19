@@ -472,6 +472,22 @@ const TimelineVisualization = forwardRef(({
     }
   };
 
+  const handleTimelineEventDelete = (event) => {
+    const originalData = event._originalData || event;
+    if (!originalData) return;
+
+    const itemData = originalData.data || originalData;
+    const itemType = originalData.type || event.type;
+
+    if (itemType === 'era' && onEraDelete) {
+      onEraDelete(itemData);
+    } else if (itemType === 'event' && onEventDelete) {
+      onEventDelete(itemData);
+    } else if (itemType === 'scene' && onSceneDelete) {
+      onSceneDelete(itemData);
+    }
+  };
+
   const handleTimelineEventEdit = (event) => {
     const originalData = event._originalData || event;
     if (!originalData) return;
@@ -791,6 +807,7 @@ const TimelineVisualization = forwardRef(({
                     data={timelineData}
                     onItemPress={handleTimelineEventPress}
                     onItemEdit={handleTimelineEventEdit}
+                    onItemDelete={handleTimelineEventDelete}
                     onRefresh={loadTimelineData}
                     refreshing={loading}
                     colors={theme.itemColors}

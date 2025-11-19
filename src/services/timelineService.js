@@ -113,14 +113,32 @@ class TimelineService {
    */
   async deleteTimeline(timelineId) {
     const timelines = await this.getAllTimelines();
-    const filtered = timelines.filter(t => t.id !== timelineId);
-    await storageService.saveTimelines(filtered.map(t => t.toJSON()));
+    const timeline = timelines.find(t => t.id === timelineId);
     
-    // Delete all related eras, events, and scenes
+    // Delete from cloud if user is logged in
+    if (timeline?.userId) {
+      try {
+        await firestore()
+          .collection('userTimelines')
+          .doc(timeline.userId)
+          .collection('timelines')
+          .doc(timelineId)
+          .delete();
+      } catch (error) {
+        console.error('Error deleting timeline from cloud:', error);
+        // Continue with local deletion even if cloud deletion fails
+      }
+    }
+    
+    // Delete all related eras, events, and scenes locally first
     const eras = await this.getErasByTimelineId(timelineId);
     for (const era of eras) {
       await this.deleteEra(era.id);
     }
+    
+    // Delete timeline from local storage
+    const filtered = timelines.filter(t => t.id !== timelineId);
+    await storageService.saveTimelines(filtered.map(t => t.toJSON()));
     
     return true;
   }
